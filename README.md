@@ -1,4 +1,4 @@
-# StringLightCAD 3D 建模工具
+# StringLightCAD 0.1 3D 建模工具
 
 **StringLightCAD** 是一个基于 Web 的轻量级 3D CAD 建模应用程序。它使用 React、Three.js (@react-three/fiber) 和 TypeScript 构建，提供了类似桌面 CAD 软件的交互体验。
 
