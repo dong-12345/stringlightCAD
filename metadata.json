@@ -1,0 +1,5 @@
+{
+  "name": "StringLightCAD",
+  "description": "基于Web的3D CAD建模工具，提供基本体创建、变换和属性编辑功能，移植自Python桌面应用程序。",
+  "requestFramePermissions": []
+}
