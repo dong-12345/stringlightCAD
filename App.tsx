@@ -43,6 +43,9 @@ const App: React.FC = () => {
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
+  // Unsaved Changes State
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
   // History State
   const [history, setHistory] = useState<{objects: CADObject[], selectedIds: string[]}[]>([
     { objects: [], selectedIds: [] }
@@ -51,6 +54,22 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Unsaved Changes Warning ---
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = ''; // Chrome requires returnValue to be set
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Update Title
+    document.title = hasUnsavedChanges ? "StringLightCAD * (未保存)" : "StringLightCAD";
+
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // --- History Management ---
   
@@ -62,6 +81,7 @@ const App: React.FC = () => {
     if (newHistory.length > MAX_HISTORY) newHistory.shift();
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
+    setHasUnsavedChanges(true); // Mark as dirty
   };
 
   const handleUndo = () => {
@@ -73,6 +93,9 @@ const App: React.FC = () => {
       setObjects(prevState.objects);
       setSelectedIds(prevState.selectedIds);
       setHistoryIndex(prevIndex);
+      // Undo technically reverts to a previous state, which might still be "unsaved" relative to disk,
+      // but we keep it marked as unsaved to ensure user knows to save.
+      setHasUnsavedChanges(true); 
     }
   };
 
@@ -206,11 +229,6 @@ const App: React.FC = () => {
     
     const newPos = targetPoint.clone().sub(rotatedOffset);
     const newRot = new THREE.Euler().setFromQuaternion(finalQuat);
-
-    // --- Floor Mode Clamp ---
-    // If Floor Mode is on, we let the Scene's Box3 logic handle the fine details,
-    // but here we can do a rough check if the user is aligning things way below ground.
-    // For now, we trust the Scene interaction to fix it if the user moves it.
     
     const updatedObj = {
       ...obj,
@@ -589,12 +607,6 @@ const App: React.FC = () => {
         }
 
         const newObj = { ...obj, ...updates };
-
-        // 2. Floor Mode Constraint (REMOVED: handled by Scene Box3 logic)
-        // We do NOT clamp here anymore because we don't have accurate bounding box info 
-        // regarding rotation. Clamping here causes flickering and incorrect positioning.
-        // The Scene component now pushes valid coordinates back to this function via TransformControls.
-
         return newObj;
       })
     );
@@ -782,6 +794,7 @@ const App: React.FC = () => {
                   setPendingOp(null);
                   setWorkPlane({ step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false });
                   setFloorMode(false);
+                  setHasUnsavedChanges(false); // Clean slate
               } else {
                   throw new Error("Invalid file format");
               }
@@ -806,6 +819,7 @@ const App: React.FC = () => {
       link.href = URL.createObjectURL(blob);
       link.download = `project_${new Date().toISOString().slice(0,10)}.sl3d`;
       link.click();
+      setHasUnsavedChanges(false); // Saved
   };
 
   const handleLibraryImport = async (url: string, name: string) => {

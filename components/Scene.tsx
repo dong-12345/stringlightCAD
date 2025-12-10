@@ -1,7 +1,7 @@
 
 import React, { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Edges, Environment, Text3D, Center } from '@react-three/drei';
+import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Environment, Text3D, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import { CADObject, WorkPlaneState } from '../types';
 
@@ -23,6 +23,12 @@ type ThreeElementsCommon = {
   primitive: any;
   meshStandardMaterial: any;
   meshBasicMaterial: any;
+  lineLoop: any;
+  bufferGeometry: any;
+  bufferAttribute: any;
+  lineBasicMaterial: any;
+  lineSegments: any;
+  edgesGeometry: any;
 }
 
 declare global {
@@ -47,6 +53,9 @@ interface SceneProps {
   workPlane: WorkPlaneState;
   floorMode: boolean;
 }
+
+// Define the boundaries of the workspace
+const SCENE_EXTENT = 500; // +/- 500 units from center (Total 1000x1000x1000)
 
 const MeshComponent: React.FC<{
   obj: CADObject;
@@ -165,20 +174,13 @@ const MeshComponent: React.FC<{
                         {obj.params.text || 'TEXT'}
                         <meshStandardMaterial
                             color={obj.color}
+                            emissive={isSelected ? "#3b82f6" : "#000000"}
                             roughness={0.4} 
                             metalness={0.3}
                         />
                       </Text3D>
                   </Center>
               </Suspense>
-               {isSelected && (
-                <Edges
-                  linewidth={2}
-                  scale={1.1} // Slightly larger for text
-                  threshold={15}
-                  color="#FFD700"
-                />
-              )}
           </group>
       )
   }
@@ -195,6 +197,7 @@ const MeshComponent: React.FC<{
       {geometry}
       <meshStandardMaterial
         color={obj.color}
+        emissive={isSelected ? "#3b82f6" : "#000000"}
         roughness={0.4} 
         metalness={0.3} // Increased slightly for better environment reflections
         polygonOffset={true}
@@ -202,14 +205,6 @@ const MeshComponent: React.FC<{
         polygonOffsetUnits={1}
         side={THREE.DoubleSide} 
       />
-      {isSelected && (
-        <Edges
-          linewidth={2}
-          scale={1.05} 
-          threshold={15}
-          color="#FFD700"
-        />
-      )}
     </mesh>
   );
 };
@@ -307,14 +302,37 @@ const PlaneConstrainedControls: React.FC<{
              const obj = e.target.object;
              obj.updateMatrixWorld(); // Ensure world matrix is up to date
 
+             const box = new THREE.Box3().setFromObject(obj);
+
              // Enforce Floor Constraint using exact Bounding Box
              if (floorMode) {
-                 const box = new THREE.Box3().setFromObject(obj);
                  const minY = box.min.y;
-                 // If any part of the object is below 0, shift the object up by that amount
                  if (minY < -0.001) {
-                     obj.position.y -= minY; // minY is negative, so this adds positive value
+                     obj.position.y -= minY; 
+                     obj.updateMatrixWorld();
+                     box.setFromObject(obj); // Update box after move
                  }
+             }
+             
+             // Enforce Boundary Constraint (XYZ)
+             let shiftX = 0;
+             let shiftY = 0;
+             let shiftZ = 0;
+             
+             if (box.min.x < -SCENE_EXTENT) shiftX = -SCENE_EXTENT - box.min.x;
+             if (box.max.x > SCENE_EXTENT) shiftX = SCENE_EXTENT - box.max.x;
+             
+             if (box.min.y < -SCENE_EXTENT) shiftY = -SCENE_EXTENT - box.min.y;
+             if (box.max.y > SCENE_EXTENT) shiftY = SCENE_EXTENT - box.max.y;
+             
+             if (box.min.z < -SCENE_EXTENT) shiftZ = -SCENE_EXTENT - box.min.z;
+             if (box.max.z > SCENE_EXTENT) shiftZ = SCENE_EXTENT - box.max.z;
+
+             if (shiftX !== 0 || shiftY !== 0 || shiftZ !== 0) {
+                 obj.position.x += shiftX;
+                 obj.position.y += shiftY;
+                 obj.position.z += shiftZ;
+                 obj.updateMatrixWorld();
              }
 
              const p = obj.position;
@@ -327,6 +345,19 @@ const PlaneConstrainedControls: React.FC<{
   );
 };
 
+const BoundaryHelper = () => {
+    // Visualize the 3D boundary box using EdgesGeometry
+    const boxGeo = useMemo(() => new THREE.BoxGeometry(SCENE_EXTENT * 2, SCENE_EXTENT * 2, SCENE_EXTENT * 2), []);
+    
+    return (
+        <group>
+             <lineSegments>
+                <edgesGeometry args={[boxGeo]} />
+                <lineBasicMaterial color="#ef4444" opacity={0.3} transparent />
+             </lineSegments>
+        </group>
+    )
+}
 
 const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClick, onUpdate, onCommit, transformMode, workPlane, floorMode }) => {
   const { scene } = useThree();
@@ -349,7 +380,13 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
         shadow-bias={-0.0001}
       />
       
-      {!workPlane.planeData && <gridHelper args={[500, 50, 0xcccccc, 0xe5e5e5]} position={[0, 0, 0]} />}
+      {!workPlane.planeData && (
+          <>
+            {/* GridHelper: Size, Divisions, Color1, Color2 */}
+            <gridHelper args={[SCENE_EXTENT * 2, 100, 0xcccccc, 0xe5e5e5]} position={[0, 0, 0]} />
+            <BoundaryHelper />
+          </>
+      )}
       <axesHelper args={[50]} />
 
       {/* Interactive Ground Plane for picking ground as workplane target */}
@@ -390,20 +427,42 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
                 if (e?.target?.object) {
                   const o = e.target.object;
                   
+                  o.updateMatrixWorld();
+                  const box = new THREE.Box3().setFromObject(o);
+                  
                   // --- PRECISE FLOOR CONSTRAINT ---
                   if (floorMode) {
-                       o.updateMatrixWorld();
-                       // Use Box3 to get the actual world-space bounding box
-                       const box = new THREE.Box3().setFromObject(o);
                        const minY = box.min.y;
                        
                        // If the lowest point is below 0, lift the object up
                        // We use a small epsilon to avoid floating point jitter
                        if (minY < -0.001) {
                            o.position.y -= minY; // Offset the position by the penetration depth
-                           // Ensure visual feedback is immediate
                            o.updateMatrixWorld();
+                           box.setFromObject(o); // Recompute box for boundary check
                        }
+                  }
+
+                  // --- BOUNDARY CONSTRAINT ---
+                  // Clamp object so its bounding box stays within +/- SCENE_EXTENT
+                  let shiftX = 0;
+                  let shiftY = 0;
+                  let shiftZ = 0;
+                  
+                  if (box.min.x < -SCENE_EXTENT) shiftX = -SCENE_EXTENT - box.min.x;
+                  else if (box.max.x > SCENE_EXTENT) shiftX = SCENE_EXTENT - box.max.x;
+                  
+                  if (box.min.y < -SCENE_EXTENT) shiftY = -SCENE_EXTENT - box.min.y;
+                  else if (box.max.y > SCENE_EXTENT) shiftY = SCENE_EXTENT - box.max.y;
+
+                  if (box.min.z < -SCENE_EXTENT) shiftZ = -SCENE_EXTENT - box.min.z;
+                  else if (box.max.z > SCENE_EXTENT) shiftZ = SCENE_EXTENT - box.max.z;
+
+                  if (shiftX !== 0 || shiftY !== 0 || shiftZ !== 0) {
+                      o.position.x += shiftX;
+                      o.position.y += shiftY;
+                      o.position.z += shiftZ;
+                      o.updateMatrixWorld();
                   }
 
                   onUpdate(obj.id, {
@@ -452,7 +511,7 @@ export const Scene: React.FC<SceneProps> = (props) => {
     <Canvas
       shadows
       dpr={[1, 2]} // Support High DPI Rendering
-      camera={{ position: [150, 150, 150], fov: 50 }}
+      camera={{ position: [150, 150, 150], fov: 50, far: 5000 }}
       className="w-full h-full bg-white"
       onPointerMissed={() => {
           // Trigger deselect only if click hits background (misses all objects)

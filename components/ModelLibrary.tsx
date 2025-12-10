@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, Suspense, useMemo, useEffect } from 'react';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
@@ -79,10 +80,10 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
                         <ModelPreview url={url} />
                     </Stage>
                 </Suspense>
-                <OrbitControls autoRotate autoRotateSpeed={2} />
+                <OrbitControls autoRotate autoRotateSpeed={2} enableZoom={true} />
              </Canvas>
              <div className="absolute bottom-4 right-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded">
-                <i className="fa-solid fa-rotate"></i> 可拖拽旋转
+                <i className="fa-solid fa-rotate"></i> 可拖拽旋转/滚轮缩放
              </div>
         </div>
     );
@@ -92,6 +93,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   const [localModels, setLocalModels] = useState<ModelEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<ModelEntry | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const lastWheelTime = useRef(0);
 
   // Combine default library with loaded local files
   const allModels = useMemo(() => [...MODEL_LIBRARY, ...localModels], [localModels]);
@@ -100,6 +103,47 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   useEffect(() => {
       if (!isOpen) setSelectedEntry(null);
   }, [isOpen]);
+
+  // Auto-scroll to selected entry
+  useEffect(() => {
+      if (selectedEntry && listContainerRef.current) {
+          const index = allModels.findIndex(m => m.url === selectedEntry.url);
+          if (index !== -1) {
+              const item = listContainerRef.current.children[index] as HTMLElement;
+              // Ensure item exists before scrolling (checking children length vs index might be safer, but mapping is direct)
+              if (item) {
+                  item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+          }
+      }
+  }, [selectedEntry, allModels]);
+
+  const handleListWheel = (e: React.WheelEvent) => {
+    // Throttle scroll events to prevent rapid switching
+    const now = Date.now();
+    if (now - lastWheelTime.current < 60) return;
+    lastWheelTime.current = now;
+
+    if (allModels.length === 0) return;
+
+    // Detect direction
+    const delta = e.deltaY;
+    if (Math.abs(delta) < 10) return; // Ignore very small scrolls
+
+    const currentIndex = selectedEntry 
+        ? allModels.findIndex(m => m.url === selectedEntry.url) 
+        : -1;
+    
+    let nextIndex = currentIndex + (delta > 0 ? 1 : -1);
+
+    // Clamp index
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= allModels.length) nextIndex = allModels.length - 1;
+
+    if (nextIndex !== currentIndex) {
+        setSelectedEntry(allModels[nextIndex]);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -175,7 +219,11 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                <div 
+                    ref={listContainerRef}
+                    className="flex-1 overflow-y-auto p-3 space-y-2"
+                    onWheel={handleListWheel}
+                >
                     {allModels.length === 0 && (
                          <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
                             <i className="fa-regular fa-folder-open text-3xl mb-3 opacity-50"></i>
@@ -188,7 +236,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                             key={index}
                             onClick={() => setSelectedEntry(entry)}
                             className={`
-                                px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-all
+                                px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-all select-none
                                 ${selectedEntry?.url === entry.url 
                                     ? 'bg-blue-600 text-white shadow-md transform scale-[1.01]' 
                                     : 'hover:bg-gray-100 text-gray-700'}
@@ -201,7 +249,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                 </div>
                 
                 <div className="p-3 bg-gray-50 text-sm text-gray-400 text-center border-t border-gray-200">
-                    共 {allModels.length} 个模型
+                    共 {allModels.length} 个模型 | 鼠标滚轮可快速切换
                 </div>
             </div>
 
