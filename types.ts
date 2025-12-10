@@ -1,5 +1,3 @@
-
-
 export type ShapeType = 'cube' | 'sphere' | 'cylinder' | 'cone' | 'prism' | 'hemisphere' | 'half_cylinder' | 'torus' | 'custom' | 'text';
 
 export interface CADObject {
@@ -10,6 +8,7 @@ export interface CADObject {
   rotation: [number, number, number];
   scale: [number, number, number];
   color: string;
+  locked?: boolean; // New property for locking objects
   params: {
     width?: number;   // for cube
     height?: number;  // for cube, cylinder, cone, prism, half_cylinder, text (depth)

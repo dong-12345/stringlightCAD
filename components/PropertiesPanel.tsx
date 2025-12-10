@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { CADObject } from '../types';
 
@@ -15,6 +16,7 @@ const NumericInput = ({
   onChange, 
   onCommit, 
   className, 
+  disabled,
   ...props 
 }: React.InputHTMLAttributes<HTMLInputElement> & { 
   value: string | number, 
@@ -68,7 +70,8 @@ const NumericInput = ({
         onFocus={(e) => { setIsEditing(true); props.onFocus?.(e); }}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        className={className}
+        className={`${className} ${disabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}`}
+        disabled={disabled}
       />
   )
 }
@@ -95,6 +98,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
       </div>
     );
   }
+
+  const isLocked = object.locked || false;
 
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
@@ -187,14 +192,25 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
     <div className="p-4 overflow-y-auto h-full">
       <div className="mb-6">
         <label className="block text-sm font-bold text-gray-500 uppercase mb-2">名称</label>
-        <input
-          type="text"
-          value={object.name}
-          onChange={(e) => handleChange('name', e.target.value)}
-          onBlur={onCommit}
-          onKeyDown={handleKeyDown}
-          className={inputClass}
-        />
+        <div className="flex gap-2">
+            <input
+            type="text"
+            value={object.name}
+            onChange={(e) => handleChange('name', e.target.value)}
+            onBlur={onCommit}
+            onKeyDown={handleKeyDown}
+            className={inputClass}
+            />
+            {/* Lock Toggle in Name area */}
+             <button 
+                onClick={() => handleChange('locked', !isLocked)}
+                className={`w-10 flex-shrink-0 flex items-center justify-center rounded border ${isLocked ? 'bg-red-50 border-red-200 text-red-500' : 'bg-gray-50 border-gray-300 text-gray-400'}`}
+                title={isLocked ? "点击解锁" : "点击锁定"}
+             >
+                 <i className={`fa-solid ${isLocked ? 'fa-lock' : 'fa-lock-open'}`}></i>
+             </button>
+        </div>
+        {isLocked && <div className="text-xs text-red-400 mt-1">此对象已锁定</div>}
       </div>
 
       <div className="mb-6">
@@ -229,6 +245,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                 onCommit={onCommit}
                 className={inputClass}
                 step="1"
+                disabled={isLocked}
               />
             </div>
           ))}
@@ -248,6 +265,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                 onCommit={onCommit}
                 className={inputClass}
                 step="15"
+                disabled={isLocked}
               />
             </div>
           ))}
@@ -283,6 +301,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                 onFocus={handleScaleFocus}
                 className={inputClass}
                 step="0.1"
+                disabled={isLocked}
               />
             </div>
           ))}
@@ -318,6 +337,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                   onChange={(val) => handleParamChange('width', val)}
                   onCommit={onCommit}
                   className={inputClass}
+                  disabled={isLocked}
                 />
               </div>
             )}
@@ -332,6 +352,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                   onChange={(val) => handleParamChange('height', val)}
                   onCommit={onCommit}
                   className={inputClass}
+                  disabled={isLocked}
                 />
               </div>
             )}
@@ -344,6 +365,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                   onChange={(val) => handleParamChange('depth', val)}
                   onCommit={onCommit}
                   className={inputClass}
+                  disabled={isLocked}
                 />
               </div>
             )}
@@ -358,6 +380,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                   onChange={(val) => handleParamChange('radius', val)}
                   onCommit={onCommit}
                   className={inputClass}
+                  disabled={isLocked}
                 />
               </div>
             )}
@@ -372,6 +395,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ object, select
                   onChange={(val) => handleParamChange('tube', val)}
                   onCommit={onCommit}
                   className={inputClass}
+                  disabled={isLocked}
                 />
               </div>
             )}

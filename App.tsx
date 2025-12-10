@@ -1,16 +1,18 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as THREE from 'three';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils';
 import { Scene } from './components/Scene';
 import { ObjectList } from './components/ObjectList';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Toolbar } from './components/Toolbar';
 import { ModelLibrary } from './components/ModelLibrary';
 import { CADObject, ShapeType, DEFAULT_COLOR, WorkPlaneState } from './types';
+import { getObjectHalfHeight } from './utils';
 
 // Maximum history steps to keep memory usage in check
 const MAX_HISTORY = 50;
@@ -26,6 +28,9 @@ const App: React.FC = () => {
   // Model Library Modal State
   const [showLibrary, setShowLibrary] = useState(false);
 
+  // Floor Constraint Mode
+  const [floorMode, setFloorMode] = useState(false);
+
   // Work Plane State
   const [workPlane, setWorkPlane] = useState<WorkPlaneState>({
     step: 'IDLE',
@@ -33,6 +38,10 @@ const App: React.FC = () => {
     sourceObjId: null,
     flipOrientation: false
   });
+
+  // Panel Visibility State
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
 
   // History State
   const [history, setHistory] = useState<{objects: CADObject[], selectedIds: string[]}[]>([
@@ -77,6 +86,10 @@ const App: React.FC = () => {
     const obj2 = objects.find(o => o.id === toolId);
     
     if (!obj1 || !obj2) return;
+    if (obj1.locked) {
+        alert(`对象 "${obj1.name}" 已锁定，无法修改。`);
+        return;
+    }
 
     try {
       const geom1 = createGeometry(obj1);
@@ -95,32 +108,18 @@ const App: React.FC = () => {
       brush2.updateMatrixWorld();
 
       const evaluator = new Evaluator();
-      // Important: Use standard attributes for better compatibility
       evaluator.attributes = ['position', 'normal']; 
-      evaluator.useGroups = false; // Disable groups to merge into single mesh
+      evaluator.useGroups = false; 
       
       const csgOp = op === 'UNION' ? ADDITION : SUBTRACTION;
       const result = evaluator.evaluate(brush1, brush2, csgOp);
 
       let resultGeometry = result.geometry;
-      
-      // --- Auto-Repair Logic ---
-      
-      // 1. Merge vertices to close gaps
       resultGeometry = mergeVertices(resultGeometry, 1e-4);
-      
-      // 2. Recompute normals for smooth shading
       resultGeometry.computeVertexNormals();
-      
-      // 3. Ensure attributes exist
       if (!resultGeometry.attributes.uv) {
         ensureAttributes(resultGeometry);
       }
-
-      // 4. Remove degenerate triangles (area ~ 0) to prevent broken faces in rendering
-      // Simple heuristic: re-indexing or cleaning can help, but THREE.BufferGeometryUtils.mergeVertices 
-      // already does a good job. For robust "remove degenerate", we would need to iterate indices.
-      // Keeping it simple for now as mergeVertices(1e-4) handles most "sliver" issues.
 
       const json = resultGeometry.toJSON();
       const id = uuidv4();
@@ -129,12 +128,13 @@ const App: React.FC = () => {
         id,
         name: `${obj1.name} ${op === 'UNION' ? '∪' : '-'} ${obj2.name}`,
         type: 'custom',
-        position: [0, 0, 0], // Result is already in world space, so reset pos
+        position: [0, 0, 0], 
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
         color: obj1.color,
         params: {},
-        geometryData: json
+        geometryData: json,
+        locked: false
       };
 
       const nextObjects = [
@@ -147,7 +147,6 @@ const App: React.FC = () => {
       setSelectedIds(nextSelected);
       pushHistory(nextObjects, nextSelected);
       
-      // Update WorkPlane active object if the base object was the active one
       if (workPlane.step === 'ACTIVE') {
           setWorkPlane(prev => ({ ...prev, sourceObjId: id }));
       }
@@ -168,14 +167,13 @@ const App: React.FC = () => {
       sourceObjId: null,
       flipOrientation: false
     });
-    setSelectedIds([]); // Clear selection to avoid transform controls getting in the way
+    setSelectedIds([]); 
   };
 
   const cancelWorkPlane = () => {
     setWorkPlane({ step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false });
   };
 
-  // Updated Alignment Logic: Uses Local data + Target World Point + Flip flag
   const alignObjectToPlane = (
     sourceId: string, 
     localPoint: THREE.Vector3, 
@@ -185,17 +183,17 @@ const App: React.FC = () => {
     flip: boolean
   ): CADObject[] => {
     const obj = objects.find(o => o.id === sourceId);
-    if (!obj) return objects;
+    if (!obj || obj.locked) return objects;
 
     // 1. Calculate Target Direction (World Space)
     const planeDir = targetNormal.clone().normalize();
     const targetDir = flip ? planeDir : planeDir.clone().negate();
 
-    // 2. Get Current World Normal of the face using current rotation
+    // 2. Get Current World Normal
     const currentQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(...obj.rotation));
     const currentWorldNormal = localNormal.clone().applyQuaternion(currentQuat).normalize();
 
-    // 3. Calculate Rotation Delta needed to turn CurrentWorldNormal to TargetDir
+    // 3. Calculate Rotation Delta
     const rotationDelta = new THREE.Quaternion().setFromUnitVectors(currentWorldNormal, targetDir);
 
     // 4. Apply Rotation
@@ -209,6 +207,11 @@ const App: React.FC = () => {
     const newPos = targetPoint.clone().sub(rotatedOffset);
     const newRot = new THREE.Euler().setFromQuaternion(finalQuat);
 
+    // --- Floor Mode Clamp ---
+    // If Floor Mode is on, we let the Scene's Box3 logic handle the fine details,
+    // but here we can do a rough check if the user is aligning things way below ground.
+    // For now, we trust the Scene interaction to fix it if the user moves it.
+    
     const updatedObj = {
       ...obj,
       position: [newPos.x, newPos.y, newPos.z] as [number, number, number],
@@ -265,6 +268,10 @@ const App: React.FC = () => {
         
         const obj = objects.find(o => o.id === id);
         if (obj) {
+            if (obj.locked) {
+                alert("该物体已锁定，无法对齐");
+                return;
+            }
             const localData = calculateLocalData(obj, point, normal);
             const targetPoint = new THREE.Vector3(...workPlane.planeData.position);
             const targetNormal = new THREE.Vector3(...workPlane.planeData.normal);
@@ -297,6 +304,10 @@ const App: React.FC = () => {
          if (id !== workPlane.planeData.targetObjId) {
              const obj = objects.find(o => o.id === id);
              if (obj) {
+                 if (obj.locked) {
+                     handleSelect(id, false, point, normal);
+                     return;
+                 }
                  const localData = calculateLocalData(obj, point, normal);
                  
                  const targetPoint = new THREE.Vector3(...workPlane.planeData.position);
@@ -313,12 +324,11 @@ const App: React.FC = () => {
                  );
                  pushHistory(nextObjects, [id]);
 
-                 // Update Active selection
                  setWorkPlane(prev => ({ 
                      ...prev, 
                      sourceObjId: id,
                      sourceLocalData: localData,
-                     flipOrientation: false // reset flip for new object
+                     flipOrientation: false
                  }));
 
                  handleSelect(id, false, point, normal);
@@ -327,14 +337,13 @@ const App: React.FC = () => {
          }
     }
 
-    // Normal Selection Logic
     handleSelect(id, false, point, normal); 
   };
   
   const toggleFlip = () => {
     if (workPlane.step === 'ACTIVE' && workPlane.sourceObjId && workPlane.planeData && workPlane.sourceLocalData) {
        const obj = objects.find(o => o.id === workPlane.sourceObjId);
-       if (!obj) return;
+       if (!obj || obj.locked) return;
        
        const newFlipState = !workPlane.flipOrientation;
        setWorkPlane(prev => ({ ...prev, flipOrientation: newFlipState }));
@@ -454,6 +463,7 @@ const App: React.FC = () => {
       scale: [1, 1, 1] as [number, number, number],
       color: DEFAULT_COLOR,
       params: {},
+      locked: false
     };
 
     switch (type) {
@@ -482,7 +492,6 @@ const App: React.FC = () => {
         }
         break;
       case 'torus':
-        // Hollow Cylinder: Big cylinder with small cylinder cutout
         newObj = { ...baseProps, name: `空心圆柱 ${objects.length + 1}`, params: { radius: 30, tube: 15, height: 40 }};
         if (!isAligned) {
             newObj.rotation = [0, 0, 0];
@@ -492,12 +501,29 @@ const App: React.FC = () => {
         newObj = { 
             ...baseProps, 
             name: `文本 ${objects.length + 1}`, 
-            // Reuse radius for Font Size, height for Thickness (Depth)
             params: { text: "3D Text", radius: 20, height: 5 }
         };
         break;
       default:
         return;
+    }
+
+    // --- Floor Mode Adjustment on Creation ---
+    if (floorMode) {
+        // Use a simple heuristic for initial creation to ensure it doesn't spawn under floor
+        const estimatedHalfHeight = getObjectHalfHeight(newObj);
+        
+        if (!isAligned) {
+            newObj.position[1] = estimatedHalfHeight;
+        } else {
+             // For aligned objects, we just ensure the point isn't below ground, 
+             // but usually the workplane dictates position. 
+             // If workplane is below ground, floor mode should override? 
+             // Let's stick to the Scene logic to correct it once rendered/moved.
+             if (newObj.position[1] < estimatedHalfHeight) {
+                newObj.position[1] = estimatedHalfHeight;
+             }
+        }
     }
 
     const nextObjects = [...objects, newObj];
@@ -510,7 +536,7 @@ const App: React.FC = () => {
     if (isAligned) {
         setWorkPlane(prev => ({ 
             ...prev, 
-            sourceObjId: id,
+            sourceObjId: id, 
             sourceLocalData: { point: [0,0,0], normal: [0,1,0] }
         }));
     }
@@ -518,8 +544,14 @@ const App: React.FC = () => {
 
   const handleDeleteObject = () => {
     setPendingOp(null);
-
     if (selectedIds.length > 0) {
+      // Cannot delete locked objects
+      const lockedIds = objects.filter(o => selectedIds.includes(o.id) && o.locked).map(o => o.id);
+      if (lockedIds.length > 0) {
+          alert("部分选中对象已锁定，无法删除。");
+          return;
+      }
+
       const nextObjects = objects.filter((obj) => !selectedIds.includes(obj.id));
       const nextSelected: string[] = [];
       
@@ -533,9 +565,38 @@ const App: React.FC = () => {
     }
   };
 
+  const handleToggleLock = () => {
+      if (selectedIds.length === 0) return;
+      const nextObjects = objects.map(obj => {
+          if (selectedIds.includes(obj.id)) {
+              return { ...obj, locked: !obj.locked };
+          }
+          return obj;
+      });
+      setObjects(nextObjects);
+      pushHistory(nextObjects, selectedIds);
+  };
+
   const handleUpdateObject = (id: string, updates: Partial<CADObject>) => {
     setObjects((prev) =>
-      prev.map((obj) => (obj.id === id ? { ...obj, ...updates } : obj))
+      prev.map((obj) => {
+        if (obj.id !== id) return obj;
+
+        // 1. Lock Check
+        if (obj.locked && !updates.hasOwnProperty('locked')) {
+            // Allow unlocking via updates if passed explicitly, otherwise block
+            return obj; 
+        }
+
+        const newObj = { ...obj, ...updates };
+
+        // 2. Floor Mode Constraint (REMOVED: handled by Scene Box3 logic)
+        // We do NOT clamp here anymore because we don't have accurate bounding box info 
+        // regarding rotation. Clamping here causes flickering and incorrect positioning.
+        // The Scene component now pushes valid coordinates back to this function via TransformControls.
+
+        return newObj;
+      })
     );
   };
 
@@ -591,7 +652,6 @@ const App: React.FC = () => {
       geom.center(); 
       geom.rotateX(-Math.PI / 2); 
     } else if (obj.type === 'torus') {
-      // Hollow Cylinder: shape with a hole
       const shape = new THREE.Shape();
       shape.absarc(0, 0, params.radius, 0, Math.PI * 2, false);
 
@@ -605,21 +665,11 @@ const App: React.FC = () => {
         curveSegments: 32
       });
       geom.center();
-      // Extrude produces along Z. Rotate X -90 to align with Y (Upright cylinder)
       geom.rotateX(-Math.PI / 2);
     } else if (obj.type === 'custom' && obj.geometryData) {
       const loader = new THREE.BufferGeometryLoader();
       geom = loader.parse(obj.geometryData);
     } else if (obj.type === 'text') {
-        // Warning: Text Geometry generation for CSG is complex because we need the font loaded synchronously here
-        // or a way to convert Text3D buffer to Geometry.
-        // For now, if user tries to boolean a Text object, we fallback to a box placeholder 
-        // OR we'd need to fetch the font again. 
-        // To simplify, we will return a placeholder box for Boolean Ops involving Text if we can't easily generate it.
-        // However, STLExporter in scene works because it traverses the scene graph mesh.
-        // Boolean op logic (createGeometry) runs purely on data.
-        // We will default to a box for text boolean ops in this lite version.
-        console.warn("布尔运算暂不支持直接使用 Text 对象，请先将其转换为网格 (未实现) 或仅作为独立对象使用。");
         geom = new THREE.BoxGeometry(params.radius || 20, params.radius || 20, params.height || 5);
     } else {
       geom = new THREE.BoxGeometry(1, 1, 1);
@@ -649,14 +699,12 @@ const App: React.FC = () => {
       projectInputRef.current?.click();
   }
 
-  // Helper to process loaded geometry into a CADObject
   const processImportedGeometry = (geometry: THREE.BufferGeometry, name: string) => {
         geometry = mergeVertices(geometry);
         geometry.center();
         ensureAttributes(geometry);
         
         const id = uuidv4();
-        // Determine position based on Work Plane
         let pos: [number, number, number] = [0, 25, 0];
         let rot: [number, number, number] = [0, 0, 0];
         
@@ -678,7 +726,8 @@ const App: React.FC = () => {
           scale: [1, 1, 1],
           color: DEFAULT_COLOR,
           params: {},
-          geometryData: geometry.toJSON()
+          geometryData: geometry.toJSON(),
+          locked: false
         };
         const nextObjects = [...objects, newObj];
         const nextSelected = [id];
@@ -686,7 +735,6 @@ const App: React.FC = () => {
         setSelectedIds(nextSelected);
         pushHistory(nextObjects, nextSelected);
         
-        // Update active workplane object
         if (workPlane.step === 'ACTIVE') {
             const localData = {
                 point: [0,0,0] as [number, number, number],
@@ -727,15 +775,13 @@ const App: React.FC = () => {
           try {
               const data = JSON.parse(text);
               if (data && Array.isArray(data.objects)) {
-                  // Basic validation
                   setObjects(data.objects);
                   setSelectedIds([]);
-                  // Reset history to the loaded state
                   setHistory([{ objects: data.objects, selectedIds: [] }]);
                   setHistoryIndex(0);
-                  // Reset other states
                   setPendingOp(null);
                   setWorkPlane({ step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false });
+                  setFloorMode(false);
               } else {
                   throw new Error("Invalid file format");
               }
@@ -789,21 +835,7 @@ const App: React.FC = () => {
     }
     const exporter = new STLExporter();
     const exportGroup = new THREE.Group();
-    // Special handling for Text objects in React Tree:
-    // Since createGeometry returns a placeholder for text, we rely on the Scene graph traversal.
-    // However, STLExporter.parse takes a THREE.Object3D. We need to grab the actual meshes from the scene.
-    // The current scene implementation uses React state to render. 
-    // We can traverse the `scene` if we had access to it, but we are in App component.
-    // Solution: We will let STLExporter parse what it can. 
-    // BUT: Since createGeometry returns boxes for text, exporting based on `objects` data map won't work well for text.
-    // Better approach: We should find the actual THREE objects in the real scene if possible.
-    // Limitation: In this Lite architecture, we are re-creating geometries for export based on data params.
-    // For Text, we will skip export in this function OR alert user.
-    // As a workaround for this "Lite" version, we will try to find the mesh in the DOM/Scene if possible? No.
-    // We will stick to the standard createGeometry logic.
-    // Note: Text boolean/export is limited in this version without a proper font loader in logic.
     
-    // Alert if Text objects are present
     if (targets.some(o => o.type === 'text')) {
         alert("提示：文本对象可能无法以高精度导出，因为它们是动态生成的。建议先进行其他操作。");
     }
@@ -872,22 +904,62 @@ const App: React.FC = () => {
           onInitWorkPlane={initWorkPlaneMode}
           workPlaneActive={workPlane.step !== 'IDLE'}
           onOpenLibrary={() => setShowLibrary(true)}
+          floorMode={floorMode}
+          onToggleFloorMode={() => setFloorMode(!floorMode)}
+          onToggleLock={handleToggleLock}
         />
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-72 bg-white border-r border-gray-200 flex flex-col z-10">
-          <div className="p-4 bg-gray-50 border-b border-gray-200 font-semibold text-lg text-gray-600">
-            对象列表
+        {/* Left Panel: Object List */}
+        <div className={`${leftPanelOpen ? 'w-72 border-r' : 'w-0 border-none'} bg-white border-gray-200 flex flex-col z-10 transition-all duration-300 ease-in-out relative overflow-hidden flex-shrink-0`}>
+          <div className="flex-1 overflow-hidden flex flex-col w-72">
+            <div className="p-4 bg-gray-50 border-b border-gray-200 font-semibold text-lg text-gray-600 flex items-center justify-center relative">
+              <span>对象列表</span>
+              <button 
+                  onClick={() => setLeftPanelOpen(false)}
+                  className="absolute right-4 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200 text-gray-500 transition-colors"
+                  title="收起"
+              >
+                  <i className="fa-solid fa-chevron-left"></i>
+              </button>
+            </div>
+            <ObjectList
+              objects={objects}
+              selectedIds={selectedIds}
+              onSelect={(id, multi) => handleSelect(id, multi)}
+            />
           </div>
-          <ObjectList
-            objects={objects}
-            selectedIds={selectedIds}
-            onSelect={(id, multi) => handleSelect(id, multi)}
-          />
         </div>
 
-        <div className="flex-1 bg-gray-50 relative">
+        <div className="flex-1 bg-gray-50 relative min-w-0">
+          {/* Expand Buttons for Sidebars */}
+          {!leftPanelOpen && (
+              <button 
+                  onClick={() => setLeftPanelOpen(true)}
+                  className="absolute left-0 top-1/2 transform -translate-y-1/2 z-40 bg-white hover:bg-blue-50 text-gray-500 hover:text-blue-600 p-3 rounded-r-xl shadow-md border border-l-0 border-gray-200 transition-colors"
+                  title="展开对象列表"
+              >
+                  <i className="fa-solid fa-chevron-right"></i>
+              </button>
+          )}
+
+          {!rightPanelOpen && (
+              <button 
+                  onClick={() => setRightPanelOpen(true)}
+                  className="absolute right-0 top-1/2 transform -translate-y-1/2 z-40 bg-white hover:bg-blue-50 text-gray-500 hover:text-blue-600 p-3 rounded-l-xl shadow-md border border-r-0 border-gray-200 transition-colors"
+                  title="展开属性面板"
+              >
+                  <i className="fa-solid fa-chevron-left"></i>
+              </button>
+          )}
+
+          {floorMode && (
+             <div className="absolute top-4 right-4 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg shadow-sm z-40 flex items-center text-sm font-bold border border-orange-200 pointer-events-none">
+                 <i className="fa-solid fa-arrow-down-to-line mr-2"></i> 基准面模式已开启
+             </div>
+          )}
+
           {pendingOp && (
             <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg z-50 animate-pulse flex items-center gap-4 text-base">
               <span><i className="fa-solid fa-arrow-pointer"></i> 请选择第二个物体（{pendingOp.type === 'UNION' ? '合并' : '切割'}工具）</span>
@@ -939,19 +1011,30 @@ const App: React.FC = () => {
             onCommit={handleCommit}
             transformMode={transformMode}
             workPlane={workPlane}
+            floorMode={floorMode}
           />
         </div>
 
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col z-10">
-          <div className="p-4 bg-gray-50 border-b border-gray-200 font-semibold text-lg text-gray-600">
-            属性面板
+        {/* Right Panel: Properties */}
+        <div className={`${rightPanelOpen ? 'w-80 border-l' : 'w-0 border-none'} bg-white border-gray-200 flex flex-col z-10 transition-all duration-300 ease-in-out relative overflow-hidden flex-shrink-0`}>
+          <div className="flex-1 overflow-hidden flex flex-col w-80">
+            <div className="p-4 bg-gray-50 border-b border-gray-200 font-semibold text-lg text-gray-600 flex items-center justify-center relative">
+              <button 
+                  onClick={() => setRightPanelOpen(false)}
+                  className="absolute left-4 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-200 text-gray-500 transition-colors"
+                  title="收起"
+              >
+                  <i className="fa-solid fa-chevron-right"></i>
+              </button>
+              <span>属性面板</span>
+            </div>
+            <PropertiesPanel 
+              object={selectedObject} 
+              selectionCount={selectedIds.length}
+              onUpdate={(updates) => selectedObject && handleUpdateObject(selectedObject.id, updates)}
+              onCommit={handleCommit}
+            />
           </div>
-          <PropertiesPanel 
-            object={selectedObject} 
-            selectionCount={selectedIds.length}
-            onUpdate={(updates) => selectedObject && handleUpdateObject(selectedObject.id, updates)}
-            onCommit={handleCommit}
-          />
         </div>
       </div>
     </div>

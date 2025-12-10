@@ -19,6 +19,9 @@ interface ToolbarProps {
   onInitWorkPlane: () => void;
   workPlaneActive: boolean;
   onOpenLibrary: () => void;
+  floorMode: boolean;
+  onToggleFloorMode: () => void;
+  onToggleLock: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ 
@@ -27,7 +30,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   selectionCount, onUndo, canUndo,
   transformMode, setTransformMode,
   onInitWorkPlane, workPlaneActive,
-  onOpenLibrary
+  onOpenLibrary,
+  floorMode, onToggleFloorMode,
+  onToggleLock
 }) => {
   // Common Button Styles - Scaled down (approx 0.8x)
   const btnClass = "px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2 text-base border border-transparent whitespace-nowrap font-medium text-gray-700";
@@ -36,6 +41,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
   const booleanEnabled = selectionCount >= 1;
   const deleteEnabled = selectionCount > 0;
+  const lockEnabled = selectionCount > 0;
 
   return (
     <div className="flex flex-col gap-2 w-full justify-center">
@@ -78,6 +84,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <i className="fa-solid fa-expand"></i>
           </button>
         </div>
+
+        <div className="w-px h-6 bg-gray-300"></div>
+
+        {/* 锁定 & 基准面 */}
+        <button 
+           className={`${btnClass} ${floorMode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}`}
+           onClick={onToggleFloorMode}
+           title="基准面模式 (物体底部不低于Y=0)"
+        >
+           <i className="fa-solid fa-arrow-down-to-line text-orange-500"></i> 基准面
+        </button>
+
+        <button 
+           className={`${btnClass} ${!lockEnabled ? disabledClass : ''}`}
+           onClick={onToggleLock}
+           disabled={!lockEnabled}
+           title="锁定/解锁选中物体"
+        >
+           <i className="fa-solid fa-lock text-gray-500"></i> 锁定
+        </button>
 
         <div className="w-px h-6 bg-gray-300"></div>
 

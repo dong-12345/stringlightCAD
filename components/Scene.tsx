@@ -1,17 +1,39 @@
 
-
 import React, { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, TransformControls, GizmoHelper, GizmoViewport, Edges, Environment, Text3D, Center } from '@react-three/drei';
+import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Edges, Environment, Text3D, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import { CADObject, WorkPlaneState } from '../types';
 
-// Augment the global JSX namespace to fix intrinsic element type errors and allow standard HTML tags
+// Fix for missing JSX IntrinsicElements in TypeScript
+// We augment both global JSX and React.JSX to handle different environment configurations
+type ThreeElementsCommon = {
+  ambientLight: any;
+  directionalLight: any;
+  gridHelper: any;
+  axesHelper: any;
+  arrowHelper: any;
+  group: any;
+  mesh: any;
+  boxGeometry: any;
+  sphereGeometry: any;
+  cylinderGeometry: any;
+  coneGeometry: any;
+  planeGeometry: any;
+  primitive: any;
+  meshStandardMaterial: any;
+  meshBasicMaterial: any;
+}
+
 declare global {
   namespace JSX {
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
+    interface IntrinsicElements extends ThreeElementsCommon {}
+  }
+}
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements extends ThreeElementsCommon {}
   }
 }
 
@@ -23,6 +45,7 @@ interface SceneProps {
   onCommit: () => void;
   transformMode: 'translate' | 'rotate' | 'scale';
   workPlane: WorkPlaneState;
+  floorMode: boolean;
 }
 
 const MeshComponent: React.FC<{
@@ -236,8 +259,9 @@ const PlaneConstrainedControls: React.FC<{
   object: CADObject,
   planeNormal: [number, number, number],
   onUpdate: (id: string, updates: Partial<CADObject>) => void,
-  onCommit: () => void
-}> = ({ object, planeNormal, onUpdate, onCommit }) => {
+  onCommit: () => void,
+  floorMode: boolean
+}> = ({ object, planeNormal, onUpdate, onCommit, floorMode }) => {
   const proxyRef = useRef<THREE.Mesh>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -280,7 +304,20 @@ const PlaneConstrainedControls: React.FC<{
         }}
         onObjectChange={(e: any) => {
            if (e.target.object) {
-             const p = e.target.object.position;
+             const obj = e.target.object;
+             obj.updateMatrixWorld(); // Ensure world matrix is up to date
+
+             // Enforce Floor Constraint using exact Bounding Box
+             if (floorMode) {
+                 const box = new THREE.Box3().setFromObject(obj);
+                 const minY = box.min.y;
+                 // If any part of the object is below 0, shift the object up by that amount
+                 if (minY < -0.001) {
+                     obj.position.y -= minY; // minY is negative, so this adds positive value
+                 }
+             }
+
+             const p = obj.position;
              // Sync real object position to proxy position
              onUpdate(object.id, { position: [p.x, p.y, p.z] });
            }
@@ -291,7 +328,7 @@ const PlaneConstrainedControls: React.FC<{
 };
 
 
-const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClick, onUpdate, onCommit, transformMode, workPlane }) => {
+const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClick, onUpdate, onCommit, transformMode, workPlane, floorMode }) => {
   const { scene } = useThree();
   const isWorkPlaneActive = workPlane.step === 'ACTIVE' && workPlane.planeData && workPlane.sourceObjId;
 
@@ -340,8 +377,8 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
             onSelect={onObjectClick}
           />
           
-          {/* Normal Controls */}
-          {selectedIds.includes(obj.id) && selectedIds.length === 1 && (!isWorkPlaneActive || obj.id !== workPlane.sourceObjId) && (
+          {/* Normal Controls: Only show if selected, only single select, NOT in active workplane mode for this obj, and NOT LOCKED */}
+          {selectedIds.includes(obj.id) && selectedIds.length === 1 && (!isWorkPlaneActive || obj.id !== workPlane.sourceObjId) && !obj.locked && (
             <TransformControls
               object={scene.children.find(c => c.userData && c.userData.id === obj.id)}
               position={obj.position}
@@ -352,6 +389,23 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
               onObjectChange={(e: any) => {
                 if (e?.target?.object) {
                   const o = e.target.object;
+                  
+                  // --- PRECISE FLOOR CONSTRAINT ---
+                  if (floorMode) {
+                       o.updateMatrixWorld();
+                       // Use Box3 to get the actual world-space bounding box
+                       const box = new THREE.Box3().setFromObject(o);
+                       const minY = box.min.y;
+                       
+                       // If the lowest point is below 0, lift the object up
+                       // We use a small epsilon to avoid floating point jitter
+                       if (minY < -0.001) {
+                           o.position.y -= minY; // Offset the position by the penetration depth
+                           // Ensure visual feedback is immediate
+                           o.updateMatrixWorld();
+                       }
+                  }
+
                   onUpdate(obj.id, {
                     position: [o.position.x, o.position.y, o.position.z],
                     rotation: [o.rotation.x, o.rotation.y, o.rotation.z],
@@ -365,19 +419,29 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
         </React.Fragment>
       ))}
 
-      {/* Plane Constrained Controls for the active object */}
-      {isWorkPlaneActive && isSelectedObjActive && activeObj && workPlane.planeData && (
+      {/* Plane Constrained Controls for the active object - Hide if locked */}
+      {isWorkPlaneActive && isSelectedObjActive && activeObj && !activeObj.locked && workPlane.planeData && (
         <PlaneConstrainedControls 
           object={activeObj} 
           planeNormal={workPlane.planeData.normal}
           onUpdate={onUpdate}
           onCommit={onCommit}
+          floorMode={floorMode}
         />
       )}
 
       <OrbitControls makeDefault />
       <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-        <GizmoViewport axisColors={['#9d4b4b', '#2f7f4f', '#3b5b9d']} labelColor="white" />
+        <GizmoViewcube 
+          faces={['右', '左', '上', '下', '前', '后']}
+          // Style: Blue Theme
+          color="#ffffff"
+          strokeColor="#3b82f6" // Blue-500
+          textColor="#1d4ed8"   // Blue-700
+          hoverColor="#bfdbfe"  // Blue-200
+          opacity={1}
+          font="800 48px 'Inter', 'Microsoft YaHei', sans-serif" 
+        />
       </GizmoHelper>
     </>
   );

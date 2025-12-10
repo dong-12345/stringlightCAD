@@ -1,10 +1,37 @@
-
 import React, { useState, useRef, Suspense, useMemo, useEffect } from 'react';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { OrbitControls, Stage, Center, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { MODEL_LIBRARY, ModelEntry } from '../model_registry';
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      mesh: any;
+      meshStandardMaterial: any;
+    }
+  }
+}
+
+// Fix for missing JSX IntrinsicElements in TypeScript
+// Augment both global JSX and React.JSX to support the elements used here
+type ThreeElementsCommon = {
+  mesh: any;
+  meshStandardMaterial: any;
+}
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements extends ThreeElementsCommon {}
+  }
+}
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements extends ThreeElementsCommon {}
+  }
+}
 
 interface ModelLibraryProps {
   isOpen: boolean;
