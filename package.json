@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.1",
     "@react-three/fiber": "^9.4.2",
-    "uuid": "^13.0.0",
-    "react": "^19.2.1",
-    "three": "^0.181.2",
     "@react-three/drei": "^10.7.7",
-    "three-bvh-csg": "^0.0.16"
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "three": "^0.181.2",
+    "uuid": "^13.0.0",
+    "three-bvh-csg": "^0.0.17"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
