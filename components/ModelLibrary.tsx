@@ -93,9 +93,17 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   const listContainerRef = useRef<HTMLDivElement>(null);
   // 上次滚轮时间引用（用于节流）
   const lastWheelTime = useRef(0);
+  // 搜索关键词状态
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // 合并默认库和加载的本地文件
-  const allModels = useMemo(() => [...MODEL_LIBRARY, ...localModels], [localModels]);
+  // 合并默认库和加载的本地文件，并根据搜索词过滤
+  const allModels = useMemo(() => {
+    const models = [...MODEL_LIBRARY, ...localModels];
+    if (!searchTerm) return models;
+    return models.filter(model => 
+      model.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [localModels, searchTerm]);
 
   // 关闭时重置选择
   useEffect(() => {
@@ -217,13 +225,25 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
         <div className="flex-1 flex overflow-hidden">
             {/* 左侧：模型列表 */}
             <div className="w-1/3 border-r border-gray-200 flex flex-col bg-white">
-                <div className="p-4 border-b border-gray-100">
+                <div className="p-4 border-b border-gray-100 space-y-3">
                     <button 
                         onClick={triggerFolderSelect}
                         className="w-full py-3 px-4 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors flex items-center justify-center gap-3 text-base font-medium"
                     >
                         <i className="fa-solid fa-folder-open"></i> 打开模型文件夹...
                     </button>
+                    
+                    {/* 搜索框 */}
+                    <div className="relative">
+                      <i className="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                      <input
+                        type="text"
+                        placeholder="搜索模型..."
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
                 </div>
                 
                 <div 
@@ -235,7 +255,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                     {allModels.length === 0 && (
                          <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
                             <i className="fa-regular fa-folder-open text-3xl mb-3 opacity-50"></i>
-                            <p>列表为空</p>
+                            <p>{searchTerm ? '未找到匹配的模型' : '列表为空'}</p>
                             <p className="text-sm mt-2 text-gray-400">请点击上方按钮加载本地文件夹，<br/>或确保您的构建环境支持自动扫描。</p>
                         </div>
                     )}
