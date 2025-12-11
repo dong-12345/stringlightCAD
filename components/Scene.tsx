@@ -1,4 +1,3 @@
-
 import React, { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Environment, Text3D, Center } from '@react-three/drei';
@@ -6,40 +5,32 @@ import * as THREE from 'three';
 import { CADObject, WorkPlaneState } from '../types';
 
 // Fix for missing JSX IntrinsicElements in TypeScript
-// We augment both global JSX and React.JSX to handle different environment configurations
-type ThreeElementsCommon = {
-  ambientLight: any;
-  directionalLight: any;
-  gridHelper: any;
-  axesHelper: any;
-  arrowHelper: any;
-  group: any;
-  mesh: any;
-  boxGeometry: any;
-  sphereGeometry: any;
-  cylinderGeometry: any;
-  coneGeometry: any;
-  planeGeometry: any;
-  primitive: any;
-  meshStandardMaterial: any;
-  meshBasicMaterial: any;
-  lineLoop: any;
-  bufferGeometry: any;
-  bufferAttribute: any;
-  lineBasicMaterial: any;
-  lineSegments: any;
-  edgesGeometry: any;
-}
-
+// We augment the global JSX namespace to include Three.js elements
 declare global {
   namespace JSX {
-    interface IntrinsicElements extends ThreeElementsCommon {}
-  }
-}
-
-declare module 'react' {
-  namespace JSX {
-    interface IntrinsicElements extends ThreeElementsCommon {}
+    interface IntrinsicElements {
+      ambientLight: any;
+      directionalLight: any;
+      gridHelper: any;
+      axesHelper: any;
+      arrowHelper: any;
+      group: any;
+      mesh: any;
+      boxGeometry: any;
+      sphereGeometry: any;
+      cylinderGeometry: any;
+      coneGeometry: any;
+      planeGeometry: any;
+      primitive: any;
+      meshStandardMaterial: any;
+      meshBasicMaterial: any;
+      lineLoop: any;
+      bufferGeometry: any;
+      bufferAttribute: any;
+      lineBasicMaterial: any;
+      lineSegments: any;
+      edgesGeometry: any;
+    }
   }
 }
 
