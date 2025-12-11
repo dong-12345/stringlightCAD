@@ -1,6 +1,7 @@
 /node_modules
 /dist-electron
 /dist
+/release
 .env
 .env.local
 .env.development.local
