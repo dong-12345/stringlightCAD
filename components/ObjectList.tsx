@@ -1,14 +1,18 @@
 
 import React from 'react';
+// 导入CAD对象类型定义
 import { CADObject } from '../types';
 
+// 定义对象列表组件的属性接口
 interface ObjectListProps {
-  objects: CADObject[];
-  selectedIds: string[];
-  onSelect: (id: string, multi: boolean) => void;
+  objects: CADObject[]; // 场景中的所有对象
+  selectedIds: string[]; // 当前选中的对象ID数组
+  onSelect: (id: string, multi: boolean) => void; // 选择对象的回调函数
 }
 
+// ObjectList组件：显示场景中所有对象的列表
 export const ObjectList: React.FC<ObjectListProps> = ({ objects, selectedIds, onSelect }) => {
+  // 对象类型映射表，将英文类型名转换为中文显示
   const typeMap: Record<string, string> = {
     cube: '方块',
     sphere: '球体',
@@ -21,6 +25,7 @@ export const ObjectList: React.FC<ObjectListProps> = ({ objects, selectedIds, on
     custom: '复合/导入'
   };
 
+  // 如果场景中没有对象，显示提示信息
   if (objects.length === 0) {
     return (
       <div className="p-6 text-center text-gray-400 text-base mt-20">
@@ -31,6 +36,7 @@ export const ObjectList: React.FC<ObjectListProps> = ({ objects, selectedIds, on
     );
   }
 
+  // 渲染对象列表
   return (
     <ul className="flex-1 overflow-y-auto">
       {objects.map((obj) => (

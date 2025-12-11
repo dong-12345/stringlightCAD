@@ -1,29 +1,32 @@
 
 
 import React from 'react';
+// 导入形状类型定义
 import { ShapeType } from '../types';
 
+// 定义工具栏组件的属性接口
 interface ToolbarProps {
-  onAdd: (type: ShapeType) => void;
-  onDelete: () => void;
-  onBooleanOp: (op: 'UNION' | 'SUBTRACT') => void;
-  onImport: () => void;
-  onExport: () => void;
-  onSaveProject: () => void;
-  onLoadProject: () => void;
-  selectionCount: number;
-  onUndo: () => void;
-  canUndo: boolean;
-  transformMode: 'translate' | 'rotate' | 'scale';
-  setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void;
-  onInitWorkPlane: () => void;
-  workPlaneActive: boolean;
-  onOpenLibrary: () => void;
-  floorMode: boolean;
-  onToggleFloorMode: () => void;
-  onToggleLock: () => void;
+  onAdd: (type: ShapeType) => void; // 添加对象回调
+  onDelete: () => void; // 删除对象回调
+  onBooleanOp: (op: 'UNION' | 'SUBTRACT') => void; // 布尔运算回调
+  onImport: () => void; // 导入STL文件回调
+  onExport: () => void; // 导出STL文件回调
+  onSaveProject: () => void; // 保存项目回调
+  onLoadProject: () => void; // 加载项目回调
+  selectionCount: number; // 当前选中对象数量
+  onUndo: () => void; // 撤销操作回调
+  canUndo: boolean; // 是否可以撤销
+  transformMode: 'translate' | 'rotate' | 'scale'; // 当前变换模式
+  setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void; // 设置变换模式回调
+  onInitWorkPlane: () => void; // 初始化工作平面回调
+  workPlaneActive: boolean; // 工作平面是否激活
+  onOpenLibrary: () => void; // 打开模型库回调
+  floorMode: boolean; // 基准面模式状态
+  onToggleFloorMode: () => void; // 切换基准面模式回调
+  onToggleLock: () => void; // 切换锁定状态回调
 }
 
+// Toolbar组件：应用程序的顶部工具栏
 export const Toolbar: React.FC<ToolbarProps> = ({ 
   onAdd, onDelete, onBooleanOp, onImport, onExport, 
   onSaveProject, onLoadProject,
@@ -34,21 +37,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   floorMode, onToggleFloorMode,
   onToggleLock
 }) => {
-  // Common Button Styles - Scaled down (approx 0.8x)
+  // 通用按钮样式 - 缩小尺寸（约0.8倍）
   const btnClass = "px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2 text-base border border-transparent whitespace-nowrap font-medium text-gray-700";
   const iconBtnClass = "p-2 rounded-lg hover:bg-gray-100 transition-colors text-lg border border-transparent";
   const disabledClass = "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-gray-400 grayscale";
 
+  // 布尔运算是否可用（至少选中一个对象）
   const booleanEnabled = selectionCount >= 1;
+  // 删除是否可用（至少选中一个对象）
   const deleteEnabled = selectionCount > 0;
+  // 锁定是否可用（至少选中一个对象）
   const lockEnabled = selectionCount > 0;
 
   return (
     <div className="flex flex-col gap-2 w-full justify-center">
       
-      {/* Row 1: System, Transform, Workflow */}
+      {/* 第一行：系统、变换、工作流程工具 */}
       <div className="flex items-center gap-3 border-b border-gray-100 pb-2">
-         {/* 撤回 */}
+         {/* 撤销按钮 */}
          <button 
           className={`${btnClass} ${!canUndo ? disabledClass : ''}`}
           onClick={onUndo}
@@ -60,7 +66,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="w-px h-6 bg-gray-300"></div>
         
-        {/* 变换工具 */}
+        {/* 变换工具组 */}
         <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
           <button 
             className={`${iconBtnClass} ${transformMode === 'translate' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'}`} 
@@ -87,7 +93,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="w-px h-6 bg-gray-300"></div>
 
-        {/* 锁定 & 基准面 */}
+        {/* 锁定和基准面按钮 */}
         <button 
            className={`${btnClass} ${floorMode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}`}
            onClick={onToggleFloorMode}
@@ -107,7 +113,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="w-px h-6 bg-gray-300"></div>
 
-        {/* 工作平面 */}
+        {/* 工作平面按钮 */}
         <button 
           className={`${btnClass} ${workPlaneActive ? 'bg-purple-100 text-purple-700 border-purple-200' : ''}`} 
           onClick={onInitWorkPlane}
@@ -118,7 +124,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="flex-1"></div>
 
-        {/* 文件操作 */}
+        {/* 文件操作按钮组 */}
         <div className="flex items-center gap-2">
             <button className={btnClass} onClick={onLoadProject} title="打开 .sl3d 项目文件">
                 <i className="fa-regular fa-folder-open text-orange-600"></i> 打开
@@ -139,7 +145,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      {/* Row 2: Creation & Modeling */}
+      {/* 第二行：创建和建模工具 */}
       <div className="flex items-center gap-3">
         {/* 基础形状组 */}
         <div className="flex items-center gap-1">
@@ -199,6 +205,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="flex-1"></div>
 
+        {/* 删除按钮 */}
         <button 
             className={`${btnClass} ${!deleteEnabled ? disabledClass : 'text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-100'}`}
             onClick={onDelete}

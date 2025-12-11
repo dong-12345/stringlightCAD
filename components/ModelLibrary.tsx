@@ -1,11 +1,17 @@
+// 导入React核心库和Three.js相关模块
 import React, { useState, useRef, Suspense, useMemo, useEffect } from 'react';
+// 从@react-three/fiber导入Canvas和useLoader钩子
 import { Canvas, useLoader } from '@react-three/fiber';
+// 导入STL加载器
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+// 从@react-three/drei导入常用3D组件和辅助工具
 import { OrbitControls, Stage, Center, Html } from '@react-three/drei';
+// 导入Three.js核心库
 import * as THREE from 'three';
+// 导入模型注册表
 import { MODEL_LIBRARY, ModelEntry } from '../model_registry';
 
-// Augment global JSX namespace
+// 扩展全局JSX命名空间
 declare global {
   namespace JSX {
     interface IntrinsicElements {
@@ -15,18 +21,19 @@ declare global {
   }
 }
 
+// 定义模型库组件的属性接口
 interface ModelLibraryProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSelect: (url: string, name: string) => void;
+  isOpen: boolean; // 模型库是否打开
+  onClose: () => void; // 关闭模型库的回调函数
+  onSelect: (url: string, name: string) => void; // 选择模型的回调函数
 }
 
-// 3D Preview Component
+// 3D预览组件：负责渲染单个STL模型的预览
 const ModelPreview: React.FC<{ url: string }> = ({ url }) => {
-  // useLoader triggers Suspense
+  // useLoader触发Suspense，加载STL文件
   const geometry = useLoader(STLLoader, url);
   
-  // Clone to avoid modifying the cached geometry if used elsewhere
+  // 克隆几何体以避免修改缓存的几何体（如果在其他地方使用）
   const geom = useMemo(() => {
       const g = geometry.clone();
       g.center();
@@ -34,6 +41,7 @@ const ModelPreview: React.FC<{ url: string }> = ({ url }) => {
       return g;
   }, [geometry]);
 
+  // 渲染模型预览网格
   return (
     <Center>
       <mesh geometry={geom}>
@@ -43,7 +51,9 @@ const ModelPreview: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
+// 预览画布组件：负责渲染3D预览场景
 const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
+    // 如果没有选择模型，显示提示信息
     if (!url) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 p-6 text-center">
@@ -53,6 +63,7 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
         );
     }
 
+    // 渲染3D预览场景
     return (
         <div className="w-full h-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200 relative">
              <Canvas shadows dpr={[1, 2]} camera={{ position: [50, 50, 50], fov: 50 }}>
@@ -70,28 +81,34 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
     );
 };
 
+// ModelLibrary组件：模型库主界面
 export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onSelect }) => {
+  // 本地模型状态（用户选择的文件夹中的模型）
   const [localModels, setLocalModels] = useState<ModelEntry[]>([]);
+  // 当前选中的模型条目
   const [selectedEntry, setSelectedEntry] = useState<ModelEntry | null>(null);
+  // 文件夹输入引用
   const folderInputRef = useRef<HTMLInputElement>(null);
+  // 列表容器引用
   const listContainerRef = useRef<HTMLDivElement>(null);
+  // 上次滚轮时间引用（用于节流）
   const lastWheelTime = useRef(0);
 
-  // Combine default library with loaded local files
+  // 合并默认库和加载的本地文件
   const allModels = useMemo(() => [...MODEL_LIBRARY, ...localModels], [localModels]);
 
-  // Reset selection when closed
+  // 关闭时重置选择
   useEffect(() => {
       if (!isOpen) setSelectedEntry(null);
   }, [isOpen]);
 
-  // Auto-scroll to selected entry
+  // 自动滚动到选中条目
   useEffect(() => {
       if (selectedEntry && listContainerRef.current) {
           const index = allModels.findIndex(m => m.url === selectedEntry.url);
           if (index !== -1) {
               const item = listContainerRef.current.children[index] as HTMLElement;
-              // Ensure item exists before scrolling (checking children length vs index might be safer, but mapping is direct)
+              // 确保项目存在再滚动（检查子元素长度与索引可能更安全，但映射是直接的）
               if (item) {
                   item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
               }
@@ -99,17 +116,18 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
       }
   }, [selectedEntry, allModels]);
 
+  // 处理列表滚轮事件
   const handleListWheel = (e: React.WheelEvent) => {
-    // Throttle scroll events to prevent rapid switching
+    // 节流滚轮事件以防止快速切换
     const now = Date.now();
     if (now - lastWheelTime.current < 60) return;
     lastWheelTime.current = now;
 
     if (allModels.length === 0) return;
 
-    // Detect direction
+    // 检测方向
     const delta = e.deltaY;
-    if (Math.abs(delta) < 10) return; // Ignore very small scrolls
+    if (Math.abs(delta) < 10) return; // 忽略非常小的滚动
 
     const currentIndex = selectedEntry 
         ? allModels.findIndex(m => m.url === selectedEntry.url) 
@@ -117,7 +135,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
     
     let nextIndex = currentIndex + (delta > 0 ? 1 : -1);
 
-    // Clamp index
+    // 限制索引范围
     if (nextIndex < 0) nextIndex = 0;
     if (nextIndex >= allModels.length) nextIndex = allModels.length - 1;
 
@@ -126,8 +144,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
     }
   };
 
+  // 如果模型库未打开，不渲染任何内容
   if (!isOpen) return null;
 
+  // 处理确认选择
   const handleConfirm = () => {
     if (selectedEntry) {
       onSelect(selectedEntry.url, selectedEntry.name);
@@ -135,10 +155,11 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
     }
   };
 
+  // 处理文件夹选择
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
         const files = Array.from(e.target.files) as File[];
-        // Filter for STL files
+        // 筛选STL文件
         const stlFiles = files.filter(f => f.name.toLowerCase().endsWith('.stl'));
         
         if (stlFiles.length === 0) {
@@ -146,6 +167,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
             return;
         }
 
+        // 创建新条目
         const newEntries: ModelEntry[] = stlFiles.map(f => ({
             name: f.name.replace('.stl', ''),
             url: URL.createObjectURL(f)
@@ -155,12 +177,15 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
     }
   };
 
+  // 触发文件夹选择
   const triggerFolderSelect = () => {
       folderInputRef.current?.click();
   };
 
+  // 渲染模型库界面
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+      {/* 隐藏的文件输入元素，用于选择文件夹 */}
       <input 
         type="file" 
         ref={folderInputRef} 
@@ -172,8 +197,9 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
         multiple 
       />
 
+      {/* 模型库主窗口 */}
       <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-[1100px] h-[85vh] flex flex-col overflow-hidden">
-        {/* Header */}
+        {/* 头部区域 */}
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <div>
             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
@@ -187,9 +213,9 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
           </button>
         </div>
 
-        {/* Body */}
+        {/* 主体区域 */}
         <div className="flex-1 flex overflow-hidden">
-            {/* Left: List */}
+            {/* 左侧：模型列表 */}
             <div className="w-1/3 border-r border-gray-200 flex flex-col bg-white">
                 <div className="p-4 border-b border-gray-100">
                     <button 
@@ -205,6 +231,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                     className="flex-1 overflow-y-auto p-3 space-y-2"
                     onWheel={handleListWheel}
                 >
+                    {/* 如果没有模型，显示提示信息 */}
                     {allModels.length === 0 && (
                          <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
                             <i className="fa-regular fa-folder-open text-3xl mb-3 opacity-50"></i>
@@ -212,6 +239,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                             <p className="text-sm mt-2 text-gray-400">请点击上方按钮加载本地文件夹，<br/>或确保您的构建环境支持自动扫描。</p>
                         </div>
                     )}
+                    {/* 渲染所有模型条目 */}
                     {allModels.map((entry, index) => (
                         <div 
                             key={index}
@@ -234,7 +262,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                 </div>
             </div>
 
-            {/* Right: Preview */}
+            {/* 右侧：预览区域 */}
             <div className="w-2/3 p-6 bg-gray-50 flex flex-col">
                 <div className="flex-1 mb-5 shadow-inner rounded-xl">
                     <PreviewCanvas url={selectedEntry?.url || null} />
