@@ -385,9 +385,8 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
 
   return (
     <>
-      {/* 高质量光照设置 */}
-      <Environment preset="city" />
-      <ambientLight intensity={0.4} /> 
+      {/* 高质量光照设置 - 使用简单的环境光和方向光替代HDR贴图 */}
+      <ambientLight intensity={0.5} /> 
       <directionalLight 
         position={[80, 100, 80]} 
         intensity={1.2} 
@@ -395,6 +394,7 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0001}
       />
+      {/* 移除Environment组件，因为它会导致网络错误 */}
       
       {/* 如果没有工作平面数据，则显示网格和边界 */}
       {!workPlane.planeData && (

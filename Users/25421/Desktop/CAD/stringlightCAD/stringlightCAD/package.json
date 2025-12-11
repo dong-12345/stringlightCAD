@@ -1,0 +1,17 @@
+{
+  "name": "stringlightCAD",
+  "version": "0.1.0",
+  "main": "electron/main.cjs", // 确保此路径正确且文件存在
+  "scripts": {
+    "electron:dev": "electron .",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    // ... 其他依赖
+  },
+  "devDependencies": {
+    "electron": "^29.0.0"
+  }
+}

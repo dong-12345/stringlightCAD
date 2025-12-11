@@ -808,11 +808,13 @@ const App: React.FC = () => {
   };
 
   const handleSaveProject = () => {
-      const projectData = {
-          version: "1.0",
-          timestamp: new Date().toISOString(),
-          objects: objects
-      };
+      try {
+          setIsLoading(true);
+          const projectData = {
+              version: "1.0",
+              timestamp: new Date().toISOString(),
+              objects: objects
+          };
       const json = JSON.stringify(projectData, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const link = document.createElement('a');
@@ -820,6 +822,12 @@ const App: React.FC = () => {
       link.download = `project_${new Date().toISOString().slice(0,10)}.sl3d`;
       link.click();
       setHasUnsavedChanges(false); // Saved
+      } catch (err) {
+          setError("保存项目时发生错误");
+          console.error("Save project error", err);
+      } finally {
+          setIsLoading(false);
+      }
   };
 
   const handleLibraryImport = async (url: string, name: string) => {
@@ -835,6 +843,7 @@ const App: React.FC = () => {
           processImportedGeometry(geometry, name);
       } catch (err) {
           console.error("Library Load Error", err);
+          setError(`无法加载模型 ${name}`);
           alert(`无法加载模型 ${name}。\n请确保文件 ${url} 存在于您的 public 文件夹中。`);
       }
   };
@@ -870,9 +879,17 @@ const App: React.FC = () => {
     link.click();
   };
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const selectedObject = selectedIds.length === 1 
     ? objects.find((obj) => obj.id === selectedIds[0]) || null 
     : null;
+
+  // 模拟初始化加载，实际项目中可以移除或替换为真实加载逻辑
+  useEffect(() => {
+    setIsLoading(false);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-full bg-gray-100 text-gray-800 overflow-hidden font-sans">
@@ -1017,16 +1034,39 @@ const App: React.FC = () => {
              </div>
           )}
 
-          <Scene 
-            objects={objects}
-            selectedIds={selectedIds}
-            onObjectClick={handleSceneClick}
-            onUpdate={handleUpdateObject}
-            onCommit={handleCommit}
-            transformMode={transformMode}
-            workPlane={workPlane}
-            floorMode={floorMode}
-          />
+          {error ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-red-50 z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg max-w-md mx-auto text-center border border-red-200">
+                <i className="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-4"></i>
+                <h3 className="text-red-700 font-bold text-lg mb-2">渲染错误</h3>
+                <p className="text-red-600 mb-4">{error}</p>
+                <button
+                  onClick={() => setError(null)}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                >
+                  重试
+                </button>
+              </div>
+            </div>
+          ) : isLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm mx-auto text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">正在加载3D场景...</p>
+              </div>
+            </div>
+          ) : (
+            <Scene 
+              objects={objects}
+              selectedIds={selectedIds}
+              onObjectClick={handleSceneClick}
+              onUpdate={handleUpdateObject}
+              onCommit={handleCommit}
+              transformMode={transformMode}
+              workPlane={workPlane}
+              floorMode={floorMode}
+            />
+          )}
         </div>
 
         {/* Right Panel: Properties */}
