@@ -97,7 +97,7 @@ npm run electron:dev
 ### 3. 核心功能
 
 #### 📐 参数化编辑
-选中物体后，在右侧面板修改参数。支持“等比例缩放”锁定。
+选中物体后，在右侧面板修改参数。支持"等比例缩放"锁定。
 
 #### 🔗 布尔运算 (合并/切割)
 1.  选中主物体。
@@ -110,13 +110,152 @@ npm run electron:dev
 3.  选择另一个物体自动对齐，或直接在平面上创建新物体。
 
 #### 📂 模型库
-*   将 STL 文件放入 `src/models` (需配置) 或手动点击“打开模型文件夹”加载本地 STL。
+*   将 STL 文件放入 `src/models` (需配置) 或手动点击"打开模型文件夹"加载本地 STL。
 *   在左侧列表滚动鼠标滚轮可快速浏览模型，点击导入。
 
 ---
 
-## 📁 目录结构
-*   `src/`: React 源代码
-*   `electron/`: Electron 主进程代码 (`main.cjs`)
-*   `release/`: 打包输出目录
-*   `public/`: 静态资源
+## 🗂️ 项目结构详解
+
+```
+stringlightCAD/
+├── components/                     # React 组件目录
+│   ├── ModelLibrary.tsx           # 模型库组件，用于浏览和导入 STL 模型
+│   ├── ObjectList.tsx             # 对象列表组件，显示场景中所有对象
+│   ├── PropertiesPanel.tsx        # 属性面板组件，编辑选中对象的属性
+│   ├── Scene.tsx                  # 3D 场景渲染组件，使用 react-three/fiber
+│   ├── TestScene.tsx              # 测试场景组件（未使用）
+│   └── Toolbar.tsx                # 工具栏组件，包含所有操作按钮
+├── electron/                      # Electron 相关文件
+│   ├── main.cjs                   # Electron 主进程文件，控制窗口和应用生命周期
+│   └── preload.js                 # Electron 预加载脚本，建立主进程与渲染进程通信
+├── src/                           # 源代码目录
+│   ├── models/                    # STL 模型文件存放目录（需要手动创建）
+├── App.tsx                        # 主应用组件，协调各组件状态和功能
+├── index.html                     # HTML 入口文件
+├── index.tsx                      # React 应用挂载点
+├── metadata.json                  # 元数据文件（未使用）
+├── model_registry.ts              # 模型注册表，自动扫描 models 目录中的 STL 文件
+├── types.ts                       # TypeScript 类型定义文件
+├── utils.ts                       # 工具函数文件
+├── vite.config.ts                 # Vite 构建配置文件
+├── package.json                   # 项目配置和依赖声明文件
+├── tsconfig.json                  # TypeScript 配置文件
+├── .gitignore                     # Git 忽略文件配置
+├── .npmrc                         # NPM 配置文件（指定镜像源）
+└── README.md                      # 项目说明文档
+
+dist/                              # 构建输出目录
+release/                           # Electron 打包输出目录
+node_modules/                      # 依赖包目录
+```
+
+### 核心组件关系图
+
+```mermaid
+graph TD
+    A[App.tsx] --> B[Scene.tsx]
+    A --> C[Toolbar.tsx]
+    A --> D[ObjectList.tsx]
+    A --> E[PropertiesPanel.tsx]
+    A --> F[ModelLibrary.tsx]
+    
+    B --> G[3D Objects]
+    C --> H[Tool Actions]
+    D --> I[Object Selection]
+    E --> J[Property Editing]
+    F --> K[Model Import]
+    
+    A --> L[model_registry.ts]
+    A --> M[types.ts]
+    A --> N[utils.ts]
+    
+    O[electron/main.cjs] --> A
+    P[electron/preload.js] --> A
+```
+
+### 各文件详细说明
+
+#### App.tsx - 主应用组件
+这是整个应用的核心组件，负责协调各个子组件的状态管理和功能实现。它包含了：
+- 对象管理状态（添加、删除、选择等）
+- 布尔运算逻辑处理
+- 历史记录和撤销功能
+- 工作平面状态管理
+- 文件导入/导出功能
+- 与 Electron 主进程的通信
+
+#### components/Scene.tsx - 3D 场景组件
+负责 3D 场景的渲染和交互，使用 react-three/fiber 和 react-three/drei 库：
+- 渲染所有 3D 对象
+- 处理对象选择和变换操作
+- 显示工作平面和辅助网格
+- 实现对象变换控制（移动、旋转、缩放）
+
+#### components/Toolbar.tsx - 工具栏组件
+提供用户操作界面，包含所有功能按钮：
+- 对象创建按钮（立方体、球体等）
+- 变换工具（移动、旋转、缩放）
+- 布尔运算按钮（合并、切割）
+- 文件操作（导入、导出、保存、加载）
+- 工作平面和模型库按钮
+
+#### components/ObjectList.tsx - 对象列表组件
+显示场景中所有对象的列表：
+- 对象名称和类型显示
+- 对象选择功能
+- 多选支持
+
+#### components/PropertiesPanel.tsx - 属性面板组件
+编辑选中对象的各种属性：
+- 对象名称、位置、旋转、缩放
+- 几何参数（根据对象类型不同而变化）
+- 颜色选择
+- 等比例缩放锁定
+
+#### components/ModelLibrary.tsx - 模型库组件
+浏览和导入 STL 模型：
+- 自动扫描 models 目录中的 STL 文件
+- 支持手动选择文件夹导入模型
+- 3D 预览功能
+
+#### electron/main.cjs - Electron 主进程
+控制桌面应用的窗口和生命周期：
+- 创建和管理应用窗口
+- 处理窗口关闭事件（检查未保存更改）
+- 与渲染进程通信
+
+#### electron/preload.js - Electron 预加载脚本
+建立主进程与渲染进程的安全通信桥梁：
+- 暴露有限的 API 给渲染进程
+- 处理未保存更改检查的通信
+
+#### model_registry.ts - 模型注册表
+自动扫描和注册 models 目录中的 STL 文件：
+- 使用 Vite 的 import.meta.glob 功能
+- 生成模型列表供 ModelLibrary 组件使用
+
+#### types.ts - 类型定义
+定义项目中使用的 TypeScript 类型：
+- CADObject 接口（表示 3D 对象）
+- ShapeType 类型（对象类型枚举）
+- WorkPlaneState 接口（工作平面状态）
+
+#### utils.ts - 工具函数
+包含各种辅助函数：
+- 几何体创建函数
+- 对象操作辅助函数
+
+---
+
+## 🧩 技术栈
+
+- **前端框架**: React 19 + TypeScript
+- **3D 引擎**: Three.js + @react-three/fiber + @react-three/drei
+- **布尔运算**: three-bvh-csg
+- **构建工具**: Vite
+- **桌面应用**: Electron
+- **包管理**: npm
+- **STL 处理**: three/examples/jsm/loaders/STLLoader
+- **UI 框架**: Tailwind CSS (CDN)
+- **图标库**: Font Awesome (CDN)
