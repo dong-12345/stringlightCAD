@@ -3,9 +3,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as THREE from 'three';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Scene } from './components/Scene';
 import { ObjectList } from './components/ObjectList';
 import { PropertiesPanel } from './components/PropertiesPanel';
@@ -13,6 +13,20 @@ import { Toolbar } from './components/Toolbar';
 import { ModelLibrary } from './components/ModelLibrary';
 import { CADObject, ShapeType, DEFAULT_COLOR, WorkPlaneState } from './types';
 import { getObjectHalfHeight } from './utils';
+
+// 扩展Window接口以包含Electron自定义方法
+declare global {
+  interface Window {
+    Electron?: {
+      onCheckUnsaveChanges: (callback: () => void) => void;
+      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
+    };
+    electronAPI?: {
+      onCheckUnsaveChanges: (callback: () => void) => void;
+      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
+    };
+  }
+}
 
 // Maximum history steps to keep memory usage in check
 const MAX_HISTORY = 50;
@@ -69,6 +83,34 @@ const App: React.FC = () => {
     document.title = hasUnsavedChanges ? "StringLightCAD * (未保存)" : "StringLightCAD";
 
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Electron环境下监听主进程的检查未保存更改消息
+  useEffect(() => {
+    const handleCheckUnsavedChanges = () => {
+      // 通过预加载脚本暴露的API回复主进程
+      if (window.electronAPI && window.electronAPI.replyUnsaveChanges) {
+        window.electronAPI.replyUnsaveChanges(hasUnsavedChanges);
+      } else if (window.Electron && window.Electron.replyUnsaveChanges) {
+        window.Electron.replyUnsaveChanges(hasUnsavedChanges);
+      }
+    };
+
+    // 添加事件监听器
+    if (window.electronAPI && window.electronAPI.onCheckUnsaveChanges) {
+      window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+    } else if (window.Electron && window.Electron.onCheckUnsaveChanges) {
+      window.Electron.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+    }
+
+    // 清理事件监听器
+    return () => {
+      if (window.electronAPI && window.electronAPI.onCheckUnsaveChanges) {
+        window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+      } else if (window.Electron && window.Electron.onCheckUnsaveChanges) {
+        window.Electron.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+      }
+    };
   }, [hasUnsavedChanges]);
 
   // --- History Management ---

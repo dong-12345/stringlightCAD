@@ -7,5 +7,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // 示例API（可根据需要扩展）
   // sendMessage: (message) => ipcRenderer.send('message', message),
-  // onMessage: (callback) => ipcRenderer.on('reply', (_event, value) => callback(value))
+  // onMessage: (callback) => ipcRenderer.on('reply', (_event, value) => callback(value)),
+  
+  // 监听主进程发送的检查未保存更改的消息
+  onCheckUnsaveChanges: (callback) => ipcRenderer.on('check-unsave-changes', callback),
+  
+  // 回复主进程是否有未保存的更改
+  replyUnsaveChanges: (hasUnsavedChanges) => ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges)
 });

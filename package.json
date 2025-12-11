@@ -47,7 +47,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/favicon.ico"
+      "icon": "stringlight.ico"
     },
     "nsis": {
       "oneClick": false,
