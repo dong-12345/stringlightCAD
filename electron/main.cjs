@@ -25,8 +25,10 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
   
-  // 打开开发者工具以便调试
-  win.webContents.openDevTools({ mode: 'detach' });
+  // 仅在开发模式下打开开发者工具以便调试
+  if (process.env.NODE_ENV === 'development') {
+    win.webContents.openDevTools({ mode: 'detach' });
+  }
 }
 
 app.whenReady().then(() => {
