@@ -20,6 +20,7 @@
     "react-dom": "^19.2.1",
     "three": "^0.181.2",
     "three-bvh-csg": "^0.0.17",
+    "three-stdlib": "^2.36.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

@@ -2,8 +2,8 @@
 import React, { useState, useRef, Suspense, useMemo, useEffect } from 'react';
 // 从@react-three/fiber导入Canvas和useLoader钩子
 import { Canvas, useLoader } from '@react-three/fiber';
-// 导入STL加载器
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+// 从three-stdlib导入STL加载器
+import { STLLoader } from 'three-stdlib';
 // 从@react-three/drei导入常用3D组件和辅助工具
 import { OrbitControls, Stage, Center, Html } from '@react-three/drei';
 // 导入Three.js核心库
@@ -68,9 +68,16 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
         <div className="w-full h-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200 relative">
              <Canvas shadows dpr={[1, 2]} camera={{ position: [50, 50, 50], fov: 50 }}>
                 <Suspense fallback={<Html center><div className="text-gray-500 whitespace-nowrap text-lg">加载中...</div></Html>}>
-                    <Stage environment="city" intensity={0.6}>
-                        <ModelPreview url={url} />
-                    </Stage>
+                    {/* 移除Stage组件，手动配置基础光照 */}
+                    <ambientLight intensity={0.5} />
+                    <directionalLight
+                      position={[80, 100, 80]}
+                      intensity={1}
+                      castShadow
+                      shadow-mapSize={[2048, 2048]}
+                      shadow-bias={-0.0001}
+                    />
+                    <ModelPreview url={url} />
                 </Suspense>
                 <OrbitControls autoRotate autoRotateSpeed={2} enableZoom={true} />
              </Canvas>

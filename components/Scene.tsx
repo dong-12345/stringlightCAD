@@ -3,7 +3,7 @@ import React, { useRef, useMemo, useEffect, useState, Suspense } from 'react';
 // 从@react-three/fiber导入Canvas和useThree钩子，用于创建Three.js场景
 import { Canvas, useThree } from '@react-three/fiber';
 // 从@react-three/drei导入常用3D组件和辅助工具
-import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Environment, Text3D, Center } from '@react-three/drei';
+import { OrbitControls, TransformControls, GizmoHelper, GizmoViewcube, Text3D, Center } from '@react-three/drei';
 // 导入Three.js核心库
 import * as THREE from 'three';
 // 导入自定义类型定义
