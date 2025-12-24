@@ -158,7 +158,7 @@ const App: React.FC = () => {
 
     // 检测两个对象是否有重叠
     if (!hasIntersection(obj1, obj2)) {
-      alert("两个对象没有重叠，无法进行布尔运算。");
+      setError("两个对象没有重叠，无法进行布尔运算。");
       return;
     }
 
@@ -1136,39 +1136,38 @@ const App: React.FC = () => {
              </div>
           )}
 
-          {error ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-red-50 z-50">
-              <div className="bg-white p-6 rounded-lg shadow-lg max-w-md mx-auto text-center border border-red-200">
-                <i className="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-4"></i>
-                <h3 className="text-red-700 font-bold text-lg mb-2">渲染错误</h3>
-                <p className="text-red-600 mb-4">{error}</p>
-                <button
-                  onClick={() => setError(null)}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                >
-                  重试
-                </button>
-              </div>
+          <Scene 
+            objects={objects}
+            selectedIds={selectedIds}
+            onObjectClick={handleSceneClick}
+            onUpdate={handleUpdateObject}
+            onCommit={handleCommit}
+            transformMode={transformMode}
+            workPlane={workPlane}
+            floorMode={floorMode}
+          />
+
+          {error && (
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-100 border border-red-300 text-red-700 px-6 py-4 rounded-lg shadow-lg z-50 max-w-md w-full mx-4 flex items-center pointer-events-auto">
+              <i className="fa-solid fa-triangle-exclamation text-red-500 text-xl mr-3"></i>
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="ml-4 text-red-700 hover:text-red-900"
+              >
+                <i className="fa-solid fa-times"></i>
+              </button>
             </div>
-          ) : isLoading ? (
+          )}
+
+          {isLoading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
               <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm mx-auto text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                 <p className="text-gray-600">正在加载3D场景...</p>
               </div>
             </div>
-          ) : (
-            <Scene 
-              objects={objects}
-              selectedIds={selectedIds}
-              onObjectClick={handleSceneClick}
-              onUpdate={handleUpdateObject}
-              onCommit={handleCommit}
-              transformMode={transformMode}
-              workPlane={workPlane}
-              floorMode={floorMode}
-            />
-          )}
+          ) : null}
         </div>
 
         {/* Right Panel: Properties */}
