@@ -984,6 +984,25 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
+  // 添加一个effect来处理错误自动消失
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    if (error) {
+      // 设置5秒后自动清除错误
+      timeoutId = setTimeout(() => {
+        setError(null);
+      }, 5000);
+    }
+    
+    // 清理函数，组件卸载或error变化时清除定时器
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [error]);
+  
   const selectedObject = selectedIds.length === 1 
     ? objects.find((obj) => obj.id === selectedIds[0]) || null 
     : null;
@@ -1136,6 +1155,19 @@ const App: React.FC = () => {
              </div>
           )}
 
+          {error && (
+            <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center gap-4 text-base max-w-md w-full mx-4">
+              <i className="fa-solid fa-triangle-exclamation mr-3"></i>
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="hover:text-gray-200 underline text-base ml-4 font-bold"
+              >
+                关闭
+              </button>
+            </div>
+          )}
+
           <Scene 
             objects={objects}
             selectedIds={selectedIds}
@@ -1146,19 +1178,6 @@ const App: React.FC = () => {
             workPlane={workPlane}
             floorMode={floorMode}
           />
-
-          {error && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-100 border border-red-300 text-red-700 px-6 py-4 rounded-lg shadow-lg z-50 max-w-md w-full mx-4 flex items-center pointer-events-auto">
-              <i className="fa-solid fa-triangle-exclamation text-red-500 text-xl mr-3"></i>
-              <span className="flex-1">{error}</span>
-              <button
-                onClick={() => setError(null)}
-                className="ml-4 text-red-700 hover:text-red-900"
-              >
-                <i className="fa-solid fa-times"></i>
-              </button>
-            </div>
-          )}
 
           {isLoading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
