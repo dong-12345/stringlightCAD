@@ -156,6 +156,12 @@ const App: React.FC = () => {
         return;
     }
 
+    // 检测两个对象是否有重叠
+    if (!hasIntersection(obj1, obj2)) {
+      alert("两个对象没有重叠，无法进行布尔运算。");
+      return;
+    }
+
     try {
       const geom1 = createGeometry(obj1);
       const geom2 = createGeometry(obj2);
@@ -218,7 +224,61 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error("Boolean operation failed", e);
-      alert("布尔运算失败：请确保模型有重叠部分，且为封闭实体。");
+      alert("布尔运算失败，请检查对象形状。");
+    }
+  };
+
+  // 检测两个对象是否相交的函数
+  const hasIntersection = (obj1: CADObject, obj2: CADObject): boolean => {
+    try {
+      const geom1 = createGeometry(obj1);
+      const geom2 = createGeometry(obj2);
+
+      // 使用边界框进行快速预检测
+      const tempMesh1 = new THREE.Mesh(geom1);
+      tempMesh1.position.set(...obj1.position);
+      tempMesh1.rotation.set(...obj1.rotation);
+      tempMesh1.scale.set(...obj1.scale);
+      tempMesh1.updateMatrixWorld();
+      
+      const tempMesh2 = new THREE.Mesh(geom2);
+      tempMesh2.position.set(...obj2.position);
+      tempMesh2.rotation.set(...obj2.rotation);
+      tempMesh2.scale.set(...obj2.scale);
+      tempMesh2.updateMatrixWorld();
+
+      const bbox1 = new THREE.Box3().setFromObject(tempMesh1);
+      const bbox2 = new THREE.Box3().setFromObject(tempMesh2);
+      
+      if (!bbox1.intersectsBox(bbox2)) {
+        return false; // 边界框不相交，几何体肯定不相交
+      }
+
+      // 边界框相交，进行精确的交集检测
+      const brush1 = new Brush(geom1);
+      brush1.position.set(...obj1.position);
+      brush1.rotation.set(...obj1.rotation);
+      brush1.scale.set(...obj1.scale);
+
+      const brush2 = new Brush(geom2);
+      brush2.position.set(...obj2.position);
+      brush2.rotation.set(...obj2.rotation);
+      brush2.scale.set(...obj2.scale);
+
+      const evaluator = new Evaluator();
+      evaluator.attributes = ['position', 'normal'];
+      evaluator.useGroups = false;
+
+      // 计算交集
+      const intersectionResult = evaluator.evaluate(brush1, brush2, ADDITION);
+      
+      // 检查交集结果是否有有效的几何数据
+      const positionAttribute = intersectionResult.geometry.attributes.position;
+      return positionAttribute && positionAttribute.count > 0;
+    } catch (error) {
+      // 如果检测失败，仍然执行布尔运算
+      console.warn("交集检测失败，继续执行布尔运算", error);
+      return true;
     }
   };
 
