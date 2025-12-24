@@ -24,6 +24,8 @@ declare global {
     electronAPI?: {
       onCheckUnsaveChanges: (callback: () => void) => void;
       replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
+      notifyProjectSaved: () => void;
+      onRequestSaveBeforeQuit: (callback: () => void) => void;
     };
   }
 }
@@ -96,22 +98,42 @@ const App: React.FC = () => {
       }
     };
 
+    // 添加对保存请求的处理
+    const handleRequestSaveBeforeQuit = () => {
+      // 执行保存操作
+      handleSaveProject();
+      // 保存完成后通知主进程
+      if (window.electronAPI && window.electronAPI.notifyProjectSaved) {
+        window.electronAPI.notifyProjectSaved();
+      }
+    };
+
+    // 用于存储清理函数的变量
+    let cleanupCheckUnsaved = null;
+    let cleanupRequestSave = null;
+
     // 添加事件监听器
     if (window.electronAPI && window.electronAPI.onCheckUnsaveChanges) {
-      window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+      cleanupCheckUnsaved = window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
     } else if (window.Electron && window.Electron.onCheckUnsaveChanges) {
       window.Electron.onCheckUnsaveChanges(handleCheckUnsavedChanges);
     }
 
+    // 监听主进程的保存请求
+    if (window.electronAPI && window.electronAPI.onRequestSaveBeforeQuit) {
+      cleanupRequestSave = window.electronAPI.onRequestSaveBeforeQuit(handleRequestSaveBeforeQuit);
+    }
+
     // 清理事件监听器
     return () => {
-      if (window.electronAPI && window.electronAPI.onCheckUnsaveChanges) {
-        window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
-      } else if (window.Electron && window.Electron.onCheckUnsaveChanges) {
-        window.Electron.onCheckUnsaveChanges(handleCheckUnsavedChanges);
+      if (cleanupCheckUnsaved && typeof cleanupCheckUnsaved === 'function') {
+        cleanupCheckUnsaved();
+      }
+      if (cleanupRequestSave && typeof cleanupRequestSave === 'function') {
+        cleanupRequestSave();
       }
     };
-  }, [hasUnsavedChanges]);
+  }, [hasUnsavedChanges, objects]);
 
   // --- History Management ---
   
@@ -924,6 +946,12 @@ const App: React.FC = () => {
       link.download = `project_${new Date().toISOString().slice(0,10)}.sl3d`;
       link.click();
       setHasUnsavedChanges(false); // Saved
+      
+      // 如果在Electron环境中，通知主进程项目已保存
+      if (window.electronAPI && window.electronAPI.notifyProjectSaved) {
+        window.electronAPI.notifyProjectSaved();
+      }
+      
       } catch (err) {
           setError("保存项目时发生错误");
           console.error("Save project error", err);

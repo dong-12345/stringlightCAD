@@ -10,8 +10,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // onMessage: (callback) => ipcRenderer.on('reply', (_event, value) => callback(value)),
   
   // 监听主进程发送的检查未保存更改的消息
-  onCheckUnsaveChanges: (callback) => ipcRenderer.on('check-unsave-changes', callback),
+  onCheckUnsaveChanges: (callback) => {
+    const subscription = (_event, ...args) => callback(...args);
+    ipcRenderer.on('check-unsave-changes', subscription);
+    return () => ipcRenderer.removeListener('check-unsave-changes', subscription);
+  },
+  
+  // 监听主进程发送的保存请求消息
+  onRequestSaveBeforeQuit: (callback) => {
+    const subscription = (_event, ...args) => callback(...args);
+    ipcRenderer.on('request-save-before-quit', subscription);
+    return () => ipcRenderer.removeListener('request-save-before-quit', subscription);
+  },
   
   // 回复主进程是否有未保存的更改
-  replyUnsaveChanges: (hasUnsavedChanges) => ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges)
+  replyUnsaveChanges: (hasUnsavedChanges) => ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges),
+  
+  // 通知主进程项目已保存
+  notifyProjectSaved: () => ipcRenderer.send('project-saved')
 });

@@ -38,7 +38,16 @@ function createWindow() {
   return mainWindow;
 }
 
+// 标志变量，用于判断是否是用户主动关闭应用
+let isQuitting = false;
+
 function handleCloseEvent(e) {
+  // 如果已经在退出过程中，则不阻止关闭
+  if (isQuitting) return;
+  
+  // 设置正在退出标志
+  isQuitting = true;
+  
   // 阻止默认关闭行为
   e.preventDefault();
   
@@ -54,29 +63,54 @@ ipcMain.on('unsave-changes-reply', (event, hasUnsavedChanges) => {
     // 显示确认对话框
     dialog.showMessageBox(mainWindow, {
       type: 'warning',
-      buttons: ['取消', '确定'],
+      buttons: ['取消', '保存并退出', '直接退出'],
       title: '确认退出',
       message: '您有未保存的更改，确定要退出吗？',
-      detail: '如果退出，您的更改将会丢失。',
+      detail: '如果直接退出，您的更改将会丢失。',
       defaultId: 0,
       cancelId: 0
     }).then(({ response }) => {
-      // 如果用户选择确定，则真正关闭应用
-      if (response === 1) {
-        // 移除close事件监听器以避免循环
-        mainWindow.removeListener('close', handleCloseEvent);
-        mainWindow.destroy();
-        app.quit();
+      // response: 0=取消, 1=保存并退出, 2=直接退出
+      if (response === 0) {
+        // 用户取消，重置退出标志
+        isQuitting = false;
+        return;
+      } else if (response === 1) {
+        // 用户选择保存并退出，发送保存指令给渲染进程
+        mainWindow.webContents.send('request-save-before-quit');
+      } else if (response === 2) {
+        // 用户选择直接退出，关闭应用
+        forceCloseApp();
       }
+    }).catch(err => {
+      console.error('Dialog error:', err);
+      // 出错时也允许退出
+      forceCloseApp();
     });
   } else {
     // 没有未保存的更改，直接关闭
-    // 移除close事件监听器以避免循环
-    mainWindow.removeListener('close', handleCloseEvent);
-    mainWindow.destroy();
-    app.quit();
+    forceCloseApp();
   }
 });
+
+// 添加IPC处理器，接收渲染进程的保存完成通知
+ipcMain.on('project-saved', () => {
+  // 项目已保存，但不应该自动关闭应用，只是移除退出标志
+  // 之前是直接调用forceCloseApp()，现在改为仅重置退出标志
+  isQuitting = false;
+});
+
+// 强制关闭应用
+function forceCloseApp() {
+  if (mainWindow) {
+    // 移除close事件监听器以避免循环
+    mainWindow.removeListener('close', handleCloseEvent);
+    // 设置窗口关闭标志
+    mainWindow.destroy();
+  }
+  // 退出应用
+  app.quit();
+}
 
 app.whenReady().then(() => {
   mainWindow = createWindow();
@@ -89,9 +123,12 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', (e) => {
-  // 移除所有监听器确保应用可以正常退出
-  if (mainWindow) {
-    mainWindow.removeListener('close', handleCloseEvent);
+  // 如果不是正在退出，设置标志
+  if (!isQuitting) {
+    isQuitting = true;
+  } else {
+    // 如果已经是退出状态，让应用继续退出
+    return;
   }
 });
 
