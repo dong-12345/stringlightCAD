@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs').promises;
 
 let mainWindow;
 
@@ -37,6 +38,92 @@ function createWindow() {
 
   return mainWindow;
 }
+
+// 处理获取模型列表的IPC事件
+ipcMain.handle('get-models-list', async () => {
+  try {
+    // 根据环境确定模型目录路径
+    let modelsDirPath;
+    // 使用app.isPackaged来判断是否在生产环境中（打包后的应用）
+    if (app.isPackaged) {
+      // 生产环境：使用资源目录
+      modelsDirPath = path.join(process.resourcesPath, 'models');
+    } else {
+      // 开发环境：使用项目根目录下的models文件夹
+      modelsDirPath = path.join(__dirname, '../models');
+    }
+
+    console.log(`Attempting to read models from: ${modelsDirPath}`); // 添加日志用于调试
+    console.log(`App is packaged: ${app.isPackaged}`); // 添加日志查看是否打包
+    
+    // 检查目录是否存在
+    try {
+      await fs.access(modelsDirPath);
+    } catch (error) {
+      console.warn(`Models directory does not exist: ${modelsDirPath}`);
+      return [];
+    }
+
+    // 读取目录内容
+    const files = await fs.readdir(modelsDirPath);
+    
+    console.log(`Found ${files.length} files in models directory`); // 添加日志
+    
+    // 过滤出STL文件
+    const stlFiles = files.filter(file => path.extname(file).toLowerCase() === '.stl');
+    
+    console.log(`Found ${stlFiles.length} STL files`); // 添加日志
+    
+    // 返回模型条目列表
+    return stlFiles.map(file => {
+      const name = path.basename(file, '.stl'); // 移除扩展名作为模型名称
+      // 根据环境决定URL格式
+      if (app.isPackaged) {
+        // 生产环境：返回相对路径，后续通过IPC读取文件内容
+        return {
+          name,
+          url: path.join(modelsDirPath, file) // 返回完整路径
+        };
+      } else {
+        // 开发环境：使用Vite处理的URL
+        return {
+          name,
+          url: `/models/${file}`
+        };
+      }
+    });
+  } catch (error) {
+    console.error('Error reading models directory:', error);
+    return [];
+  }
+});
+
+// 处理获取模型内容的IPC事件
+ipcMain.handle('get-model-content', async (event, filePath) => {
+  try {
+    // 确保路径安全，防止路径遍历攻击
+    const basePath = process.env.NODE_ENV === 'production' 
+      ? path.join(process.resourcesPath, 'models')
+      : path.join(__dirname, '../models');
+    
+    const resolvedPath = path.resolve(filePath);
+    const baseResolvedPath = path.resolve(basePath);
+    
+    // 确保请求的路径在models目录下
+    if (!resolvedPath.startsWith(baseResolvedPath)) {
+      throw new Error('Invalid file path');
+    }
+    
+    // 读取文件内容
+    const fileContent = await fs.readFile(resolvedPath);
+    
+    // 转换为ArrayBuffer，以便在前端使用
+    return fileContent.buffer.slice(fileContent.byteOffset, fileContent.byteOffset + fileContent.byteLength);
+  } catch (error) {
+    console.error('Error reading model file:', error);
+    throw error;
+  }
+});
 
 // 标志变量，用于判断是否是用户主动关闭应用
 let isQuitting = false;

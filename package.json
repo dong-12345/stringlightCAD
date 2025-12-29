@@ -46,6 +46,12 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "models/",
+        "to": "models/"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "stringlight.ico"

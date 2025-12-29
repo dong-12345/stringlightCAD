@@ -29,3 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 通知主进程项目已保存
   notifyProjectSaved: () => ipcRenderer.send('project-saved')
 });
+
+// 添加获取模型列表的API
+contextBridge.exposeInMainWorld('modelsAPI', {
+  getModelsList: () => ipcRenderer.invoke('get-models-list'),
+  getModelContent: (filePath) => ipcRenderer.invoke('get-model-content', filePath)
+});

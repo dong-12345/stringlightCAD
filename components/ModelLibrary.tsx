@@ -8,8 +8,8 @@ import { STLLoader } from 'three-stdlib';
 import { OrbitControls, Stage, Center, Html } from '@react-three/drei';
 // 导入Three.js核心库
 import * as THREE from 'three';
-// 导入模型注册表
-import { MODEL_LIBRARY, ModelEntry } from '../model_registry';
+// 导入模型注册表和加载函数
+import { MODEL_LIBRARY, ModelEntry, loadElectronModels, loadModelContent } from '../model_registry';
 
 // 扩展全局JSX命名空间
 declare global {
@@ -18,6 +18,20 @@ declare global {
       mesh: any;
       meshStandardMaterial: any;
     }
+  }
+  
+  // 扩展Window接口以包含Electron自定义方法
+  interface Window {
+    electronAPI?: {
+      onCheckUnsaveChanges: (callback: () => void) => void;
+      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
+      notifyProjectSaved: () => void;
+      onRequestSaveBeforeQuit: (callback: () => void) => void;
+    };
+    modelsAPI?: {
+      getModelsList: () => Promise<ModelEntry[]>;
+      getModelContent: (filePath: string) => Promise<ArrayBuffer>;
+    };
   }
 }
 
@@ -74,8 +88,10 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
                       position={[80, 100, 80]}
                       intensity={1}
                       castShadow
-                      shadow-mapSize={[2048, 2048]}
-                      shadow-bias={-0.0001}
+                      {...{ 
+                        'shadow-mapSize': [2048, 2048],
+                        'shadow-bias': -0.0001 
+                      }}
                     />
                     <ModelPreview url={url} />
                 </Suspense>
@@ -92,6 +108,8 @@ const PreviewCanvas: React.FC<{ url: string | null }> = ({ url }) => {
 export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onSelect }) => {
   // 本地模型状态（用户选择的文件夹中的模型）
   const [localModels, setLocalModels] = useState<ModelEntry[]>([]);
+  // 从Electron资源目录加载的模型
+  const [electronModels, setElectronModels] = useState<ModelEntry[]>([]);
   // 当前选中的模型条目
   const [selectedEntry, setSelectedEntry] = useState<ModelEntry | null>(null);
   // 文件夹输入引用
@@ -103,14 +121,79 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   // 搜索关键词状态
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 合并默认库和加载的本地文件，并根据搜索词过滤
+  // 刷新Electron模型列表
+  const refreshElectronModels = async () => {
+    if (typeof window !== 'undefined' && window.modelsAPI) {
+      try {
+        const models = await window.modelsAPI.getModelsList();
+        
+        // 检查是否在Electron环境中（使用更可靠的方法）
+        const isElectron = window && 
+                          (window as any).process && 
+                          (window as any).process.type;
+        
+        // 检查是否是打包后的应用
+        const isPackaged = isElectron && (window as any).process && (window as any).process.env.NODE_ENV === 'production';
+        
+        // 如果存在window.process，我们就在Electron环境中
+        if (isElectron) {
+          // 在Electron环境中，需要将文件路径转换为blob URL
+          const processedModels = await Promise.all(models.map(async (model) => {
+            try {
+              const blobUrl = await loadModelContent(model.url);
+              return {
+                name: model.name,
+                url: blobUrl
+              };
+            } catch (error) {
+              console.error(`Error processing model ${model.name}:`, error);
+              return null; // 返回null表示处理失败
+            }
+          }));
+          
+          // 过滤掉处理失败的模型
+          const validModels = processedModels.filter(model => model !== null) as ModelEntry[];
+          setElectronModels(validModels);
+        } else {
+          // 开发环境中直接使用模型列表
+          setElectronModels(models);
+        }
+      } catch (error) {
+        console.error("Error refreshing electron models:", error);
+      }
+    }
+  };
+
+  // 在组件挂载时加载Electron模型
+  useEffect(() => {
+    const loadModels = async () => {
+      if (typeof window !== 'undefined' && window.modelsAPI) {
+        const models = await window.modelsAPI.getModelsList();
+        setElectronModels(models);
+      } else {
+        // 如果不是在Electron环境中，尝试使用Vite的glob功能加载开发环境中的模型
+        // 但这已经在model_registry.ts中处理了
+      }
+    };
+    
+    loadModels();
+  }, []);
+
+  // 每次打开模型库时刷新模型列表
+  useEffect(() => {
+    if (isOpen) {
+      refreshElectronModels();
+    }
+  }, [isOpen, refreshElectronModels]);
+
+  // 合并默认库、Electron模型和加载的本地文件，并根据搜索词过滤
   const allModels = useMemo(() => {
-    const models = [...MODEL_LIBRARY, ...localModels];
+    const models = [...MODEL_LIBRARY, ...electronModels, ...localModels];
     if (!searchTerm) return models;
     return models.filter(model => 
       model.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [localModels, searchTerm]);
+  }, [MODEL_LIBRARY, electronModels, localModels, searchTerm]);
 
   // 关闭时重置选择
   useEffect(() => {
@@ -223,7 +306,12 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
             </h2>
             <p className="text-base text-gray-500 mt-1">选择内置模型或加载本地文件夹</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200">
+          <button 
+            onClick={() => {
+              setSelectedEntry(null);
+              onClose();
+            }} 
+            className="text-gray-400 hover:text-red-500 transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200">
             <i className="fa-solid fa-xmark text-2xl"></i>
           </button>
         </div>
@@ -305,7 +393,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                     </div>
                     <div className="flex gap-3">
                         <button 
-                            onClick={onClose}
+                            onClick={() => {
+                              setSelectedEntry(null);
+                              onClose();
+                            }}
                             className="px-6 py-2 text-base text-gray-600 hover:bg-gray-200 rounded-xl transition-colors font-medium"
                         >
                             取消
