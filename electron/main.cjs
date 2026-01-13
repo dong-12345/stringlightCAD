@@ -2,9 +2,25 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 
+// 设置过期日期 - 修改这个日期来控制应用的有效期
+const EXPIRATION_DATE = new Date('2025-12-31'); // 修改这个日期以设定到期时间
+
 let mainWindow;
 
 function createWindow() {
+  // 检查是否已过期
+  const currentDate = new Date();
+  if (currentDate > EXPIRATION_DATE) {
+    dialog.showMessageBoxSync({
+      type: 'info',
+      title: '应用已过期',
+      message: `此软件版本已于 ${EXPIRATION_DATE.toLocaleDateString()} 到期，请联系供应商获取新版。`,
+      buttons: ['确定']
+    });
+    app.quit();
+    return;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
