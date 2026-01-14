@@ -1,9 +1,10 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const fsNative = require('fs'); // 添加同步fs模块用于创建目录
 
 // 设置过期日期 - 修改这个日期来控制应用的有效期
-const EXPIRATION_DATE = new Date('2025-12-31'); // 修改这个日期以设定到期时间
+const EXPIRATION_DATE = new Date('2025-3-15'); // 修改这个日期以设定到期时间
 
 let mainWindow;
 
@@ -54,6 +55,48 @@ function createWindow() {
 
   return mainWindow;
 }
+
+// 处理获取开始日期的IPC事件
+ipcMain.handle('get-start-date', async () => {
+  try {
+    // 获取userData路径
+    const userDataPath = app.getPath('userData');
+    const startDateFilePath = path.join(userDataPath, 'start_date.txt');
+    
+    // 检查文件是否存在
+    if (fsNative.existsSync(startDateFilePath)) {
+      // 读取文件内容
+      const startDate = await fs.readFile(startDateFilePath, 'utf8');
+      return startDate.trim(); // 返回日期字符串
+    } else {
+      return null; // 文件不存在则返回null
+    }
+  } catch (error) {
+    console.error('Error reading start date:', error);
+    return null;
+  }
+});
+
+// 处理保存开始日期的IPC事件
+ipcMain.handle('save-start-date', async (event, startDate) => {
+  try {
+    // 获取userData路径
+    const userDataPath = app.getPath('userData');
+    const startDateFilePath = path.join(userDataPath, 'start_date.txt');
+    
+    // 确保userData目录存在
+    if (!fsNative.existsSync(userDataPath)) {
+      fsNative.mkdirSync(userDataPath, { recursive: true });
+    }
+    
+    // 写入开始日期到文件
+    await fs.writeFile(startDateFilePath, startDate, 'utf8');
+    console.log(`Start date saved to: ${startDateFilePath}`);
+  } catch (error) {
+    console.error('Error saving start date:', error);
+    throw error;
+  }
+});
 
 // 处理获取模型列表的IPC事件
 ipcMain.handle('get-models-list', async () => {

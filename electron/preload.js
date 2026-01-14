@@ -27,7 +27,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   replyUnsaveChanges: (hasUnsavedChanges) => ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges),
   
   // 通知主进程项目已保存
-  notifyProjectSaved: () => ipcRenderer.send('project-saved')
+  notifyProjectSaved: () => ipcRenderer.send('project-saved'),
+  
+  // 获取和保存开始日期
+  getStartDate: () => ipcRenderer.invoke('get-start-date'),
+  saveStartDate: (startDate) => ipcRenderer.invoke('save-start-date', startDate)
 });
 
 // 添加获取模型列表的API
