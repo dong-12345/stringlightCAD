@@ -102,55 +102,78 @@ ipcMain.handle('save-start-date', async (event, startDate) => {
 ipcMain.handle('get-models-list', async () => {
   try {
     // 根据环境确定模型目录路径
-    let modelsDirPath;
+    let modelsDirPaths = [];
+    
     // 使用app.isPackaged来判断是否在生产环境中（打包后的应用）
     if (app.isPackaged) {
       // 生产环境：使用资源目录
-      modelsDirPath = path.join(process.resourcesPath, 'models');
+      modelsDirPaths.push(path.join(process.resourcesPath, 'models'));
     } else {
-      // 开发环境：使用项目根目录下的models文件夹
-      modelsDirPath = path.join(__dirname, '../models');
-    }
-
-    console.log(`Attempting to read models from: ${modelsDirPath}`); // 添加日志用于调试
-    console.log(`App is packaged: ${app.isPackaged}`); // 添加日志查看是否打包
-    
-    // 检查目录是否存在
-    try {
-      await fs.access(modelsDirPath);
-    } catch (error) {
-      console.warn(`Models directory does not exist: ${modelsDirPath}`);
-      return [];
-    }
-
-    // 读取目录内容
-    const files = await fs.readdir(modelsDirPath);
-    
-    console.log(`Found ${files.length} files in models directory`); // 添加日志
-    
-    // 过滤出STL文件
-    const stlFiles = files.filter(file => path.extname(file).toLowerCase() === '.stl');
-    
-    console.log(`Found ${stlFiles.length} STL files`); // 添加日志
-    
-    // 返回模型条目列表
-    return stlFiles.map(file => {
-      const name = path.basename(file, '.stl'); // 移除扩展名作为模型名称
-      // 根据环境决定URL格式
-      if (app.isPackaged) {
-        // 生产环境：返回相对路径，后续通过IPC读取文件内容
-        return {
-          name,
-          url: path.join(modelsDirPath, file) // 返回完整路径
-        };
-      } else {
-        // 开发环境：使用Vite处理的URL
-        return {
-          name,
-          url: `/models/${file}`
-        };
+      // 开发环境：添加多个可能的models目录路径
+      modelsDirPaths.push(path.join(__dirname, '../models')); // 项目根目录下的models
+      
+      // 尝试获取当前工作目录下的models文件夹
+      const currentWorkingDirModels = path.join(process.cwd(), 'models');
+      if (!modelsDirPaths.includes(currentWorkingDirModels)) {
+        modelsDirPaths.push(currentWorkingDirModels);
       }
-    });
+    }
+
+    let allStlFiles = [];
+
+    // 遍历所有可能的模型目录
+    for (const modelsDirPath of modelsDirPaths) {
+      console.log(`Attempting to read models from: ${modelsDirPath}`); // 添加日志用于调试
+      
+      // 检查目录是否存在
+      try {
+        await fs.access(modelsDirPath);
+      } catch (error) {
+        console.warn(`Models directory does not exist: ${modelsDirPath}`);
+        continue; // 跳过不存在的目录
+      }
+
+      // 读取目录内容
+      const files = await fs.readdir(modelsDirPath);
+      
+      console.log(`Found ${files.length} files in models directory: ${modelsDirPath}`); // 添加日志
+      
+      // 过滤出STL文件
+      const stlFiles = files.filter(file => path.extname(file).toLowerCase() === '.stl');
+      
+      console.log(`Found ${stlFiles.length} STL files in: ${modelsDirPath}`); // 添加日志
+      
+      // 添加到总列表
+      allStlFiles = allStlFiles.concat(stlFiles.map(file => {
+        const name = path.basename(file, '.stl'); // 移除扩展名作为模型名称
+        // 根据环境决定URL格式
+        if (app.isPackaged) {
+          // 生产环境：返回相对路径，后续通过IPC读取文件内容
+          return {
+            name,
+            url: path.join(modelsDirPath, file) // 返回完整路径
+          };
+        } else {
+          // 开发环境：使用相对于项目根目录的路径
+          return {
+            name,
+            url: path.join(modelsDirPath, file)
+          };
+        }
+      }));
+    }
+
+    // 去重：如果有重复的模型名称，保留第一个
+    const uniqueModels = [];
+    const seenNames = new Set();
+    for (const model of allStlFiles) {
+      if (!seenNames.has(model.name)) {
+        seenNames.add(model.name);
+        uniqueModels.push(model);
+      }
+    }
+
+    return uniqueModels;
   } catch (error) {
     console.error('Error reading models directory:', error);
     return [];
@@ -165,11 +188,14 @@ ipcMain.handle('get-model-content', async (event, filePath) => {
       ? path.join(process.resourcesPath, 'models')
       : path.join(__dirname, '../models');
     
+    // 检查请求的文件是否在允许的目录中（包括当前工作目录下的models）
+    const currentWorkingDirModels = path.join(process.cwd(), 'models');
     const resolvedPath = path.resolve(filePath);
     const baseResolvedPath = path.resolve(basePath);
+    const currentWorkingDirResolvedPath = path.resolve(currentWorkingDirModels);
     
-    // 确保请求的路径在models目录下
-    if (!resolvedPath.startsWith(baseResolvedPath)) {
+    // 确保请求的路径在允许的models目录下
+    if (!resolvedPath.startsWith(baseResolvedPath) && !resolvedPath.startsWith(currentWorkingDirResolvedPath)) {
       throw new Error('Invalid file path');
     }
     
@@ -199,6 +225,12 @@ ipcMain.handle('save-file', async (event, filePath, data) => {
       if (!fileName.endsWith('.sl3d')) {
         throw new Error('Invalid file extension');
       }
+    }
+    
+    // 确保目录存在
+    const dir = path.dirname(resolvedPath);
+    if (!fsNative.existsSync(dir)) {
+      fsNative.mkdirSync(dir, { recursive: true });
     }
     
     // 写入文件内容

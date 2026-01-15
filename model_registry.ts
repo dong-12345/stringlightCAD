@@ -52,9 +52,9 @@ export const MODEL_LIBRARY: ModelEntry[] = [...devModelLibrary, ...prodModelLibr
 
 // 异步获取Electron环境中的模型列表
 export const loadElectronModels = async (): Promise<ModelEntry[]> => {
-  if (typeof window !== 'undefined' && window.modelsAPI) {
+  if (typeof window !== 'undefined' && window.electronAPI) {
     try {
-      const modelsList = await window.modelsAPI.getModelsList();
+      const modelsList = await window.electronAPI.getModelsList();
       return modelsList;
     } catch (error) {
       console.error("Error loading electron models:", error);
@@ -77,4 +77,33 @@ export const loadModelContent = async (filePath: string): Promise<string> => {
     }
   }
   throw new Error("Electron API not available");
+};
+
+
+// 定义一个专门用于获取当前项目路径下models文件夹模型的函数
+export const loadProjectModels = async (): Promise<ModelEntry[]> => {
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    try {
+      // 通过IPC获取当前项目路径下的models文件夹中的模型
+      const modelsList = await window.electronAPI.getModelsList();
+      return modelsList;
+    } catch (error) {
+      console.error("Error loading project models:", error);
+      return [];
+    }
+  } else {
+    // 在浏览器环境中，我们不能直接访问文件系统，所以返回空数组
+    // 或者尝试从公共目录加载（如果有的话）
+    try {
+      // 尝试使用动态导入加载公共模型目录中的模型
+      const publicModels: ModelEntry[] = [];
+      
+      // 如果public目录中有models文件夹，尝试加载
+      // 注意：这需要在public/models目录下有manifest文件或提前知道文件名
+      return publicModels;
+    } catch (error) {
+      console.error("Error loading public models:", error);
+      return [];
+    }
+  }
 };

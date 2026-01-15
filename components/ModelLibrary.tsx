@@ -9,7 +9,7 @@ import { OrbitControls, Stage, Center, Html } from '@react-three/drei';
 // 导入Three.js核心库
 import * as THREE from 'three';
 // 导入模型注册表和加载函数
-import { MODEL_LIBRARY, ModelEntry, loadElectronModels, loadModelContent } from '../model_registry';
+import { MODEL_LIBRARY, ModelEntry, loadElectronModels, loadModelContent, loadProjectModels } from '../model_registry';
 
 // 扩展全局JSX命名空间
 declare global {
@@ -97,6 +97,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   const [localModels, setLocalModels] = useState<ModelEntry[]>([]);
   // 从Electron资源目录加载的模型
   const [electronModels, setElectronModels] = useState<ModelEntry[]>([]);
+  // 从当前项目路径加载的模型
+  const [projectModels, setProjectModels] = useState<ModelEntry[]>([]);
   // 当前选中的模型条目
   const [selectedEntry, setSelectedEntry] = useState<ModelEntry | null>(null);
   // 文件夹输入引用
@@ -107,6 +109,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
   const lastWheelTime = useRef(0);
   // 搜索关键词状态
   const [searchTerm, setSearchTerm] = useState('');
+  // 加载状态，确保模型加载完成
+  const [isLoading, setIsLoading] = useState(true);
 
   // 刷新Electron模型列表
   const refreshElectronModels = async () => {
@@ -147,24 +151,64 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
         }
       } catch (error) {
         console.error("Error refreshing electron models:", error);
+      } finally {
+        setIsLoading(false);
       }
+    } else {
+      // 如果不在Electron环境中，直接标记为加载完成
+      setIsLoading(false);
     }
   };
 
-  // 在组件挂载时加载Electron模型
+  // 在组件挂载时立即加载项目模型（包括当前项目路径下的models文件夹）
   useEffect(() => {
     const loadModels = async () => {
-      if (typeof window !== 'undefined' && window.modelsAPI) {
-        const models = await window.modelsAPI.getModelsList();
-        setElectronModels(models);
+      // 加载项目路径下的模型
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        try {
+          const projectModelsList = await loadProjectModels();
+          
+          // 检查是否在Electron环境中
+          const isElectron = window && 
+                            (window as any).process && 
+                            (window as any).process.type;
+                            
+          if (isElectron) {
+            // 在Electron环境中，需要将文件路径转换为blob URL
+            const processedModels = await Promise.all(projectModelsList.map(async (model) => {
+              try {
+                const blobUrl = await loadModelContent(model.url);
+                return {
+                  name: model.name,
+                  url: blobUrl
+                };
+              } catch (error) {
+                console.error(`Error processing project model ${model.name}:`, error);
+                return null;
+              }
+            }));
+            
+            // 过滤掉处理失败的模型
+            const validModels = processedModels.filter(model => model !== null) as ModelEntry[];
+            setProjectModels(validModels);
+          } else {
+            // 在非Electron环境中，直接设置模型列表
+            setProjectModels(projectModelsList);
+          }
+        } catch (error) {
+          console.error("Error loading project models on mount:", error);
+        } finally {
+          setIsLoading(false);
+        }
       } else {
         // 如果不是在Electron环境中，尝试使用Vite的glob功能加载开发环境中的模型
         // 但这已经在model_registry.ts中处理了
+        setIsLoading(false);
       }
     };
     
     loadModels();
-  }, []);
+  }, []); // 只在组件挂载时执行一次
 
   // 每次打开模型库时刷新模型列表
   useEffect(() => {
@@ -173,14 +217,14 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
     }
   }, [isOpen, refreshElectronModels]);
 
-  // 合并默认库、Electron模型和加载的本地文件，并根据搜索词过滤
+  // 合并默认库、Electron模型、项目模型和加载的本地文件，并根据搜索词过滤
   const allModels = useMemo(() => {
-    const models = [...MODEL_LIBRARY, ...electronModels, ...localModels];
+    const models = [...MODEL_LIBRARY, ...electronModels, ...projectModels, ...localModels];
     if (!searchTerm) return models;
     return models.filter(model => 
       model.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [MODEL_LIBRARY, electronModels, localModels, searchTerm]);
+  }, [MODEL_LIBRARY, electronModels, projectModels, localModels, searchTerm]);
 
   // 关闭时重置选择
   useEffect(() => {
@@ -333,30 +377,40 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, onS
                     className="flex-1 overflow-y-auto p-3 space-y-2"
                     onWheel={handleListWheel}
                 >
-                    {/* 如果没有模型，显示提示信息 */}
-                    {allModels.length === 0 && (
-                         <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
-                            <i className="fa-regular fa-folder-open text-3xl mb-3 opacity-50"></i>
-                            <p>{searchTerm ? '未找到匹配的模型' : '列表为空'}</p>
-                            <p className="text-sm mt-2 text-gray-400">请点击上方按钮加载本地文件夹，<br/>或确保您的构建环境支持自动扫描。</p>
+                    {/* 显示加载状态或模型列表 */}
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
+                            <i className="fa-solid fa-spinner fa-spin text-3xl mb-3"></i>
+                            <p>正在加载模型...</p>
                         </div>
+                    ) : (
+                        <>
+                            {/* 如果没有模型，显示提示信息 */}
+                            {allModels.length === 0 && (
+                                 <div className="flex flex-col items-center justify-center text-gray-400 mt-16 text-base px-6 text-center">
+                                    <i className="fa-regular fa-folder-open text-3xl mb-3 opacity-50"></i>
+                                    <p>{searchTerm ? '未找到匹配的模型' : '列表为空'}</p>
+                                    <p className="text-sm mt-2 text-gray-400">请将STL文件放入项目根目录的models文件夹，<br/>或点击上方按钮加载本地文件夹。</p>
+                                </div>
+                            )}
+                            {/* 渲染所有模型条目 */}
+                            {allModels.map((entry, index) => (
+                                <div 
+                                    key={index}
+                                    onClick={() => setSelectedEntry(entry)}
+                                    className={`
+                                        px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-all select-none
+                                        ${selectedEntry?.url === entry.url 
+                                            ? 'bg-blue-600 text-white shadow-md transform scale-[1.01]' 
+                                            : 'hover:bg-gray-100 text-gray-700'}
+                                    `}
+                                >
+                                    <i className={`fa-solid text-lg ${selectedEntry?.url === entry.url ? 'fa-cube text-white' : 'fa-cube text-gray-400'}`}></i>
+                                    <span className="truncate font-medium text-base">{entry.name}</span>
+                                </div>
+                            ))}
+                        </>
                     )}
-                    {/* 渲染所有模型条目 */}
-                    {allModels.map((entry, index) => (
-                        <div 
-                            key={index}
-                            onClick={() => setSelectedEntry(entry)}
-                            className={`
-                                px-4 py-3 rounded-xl cursor-pointer flex items-center gap-3 transition-all select-none
-                                ${selectedEntry?.url === entry.url 
-                                    ? 'bg-blue-600 text-white shadow-md transform scale-[1.01]' 
-                                    : 'hover:bg-gray-100 text-gray-700'}
-                            `}
-                        >
-                            <i className={`fa-solid text-lg ${selectedEntry?.url === entry.url ? 'fa-cube text-white' : 'fa-cube text-gray-400'}`}></i>
-                            <span className="truncate font-medium text-base">{entry.name}</span>
-                        </div>
-                    ))}
                 </div>
                 
                 <div className="p-3 bg-gray-50 text-sm text-gray-400 text-center border-t border-gray-200">

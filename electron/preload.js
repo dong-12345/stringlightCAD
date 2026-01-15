@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges);
   },
   
-  // 监听保存项目请求
+  // 监听请求保存项目的消息
   onRequestSaveBeforeQuit: (callback) => {
     const listener = (event, ...args) => callback(...args);
     ipcRenderer.on('request-save-before-quit', listener);
@@ -61,4 +61,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 获取当前平台信息
   getPlatform: () => process.platform
+});
+
+// 暴露一个用于获取当前项目路径下的模型的新API
+contextBridge.exposeInMainWorld('modelsAPI', {
+  getModelsList: () => ipcRenderer.invoke('get-models-list'),
+  getModelContent: (filePath) => ipcRenderer.invoke('get-model-content', filePath)
 });
