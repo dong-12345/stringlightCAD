@@ -16,21 +16,7 @@ import { getObjectHalfHeight } from './utils';
 // Maximum history steps to keep memory usage in check
 const MAX_HISTORY = 50;
 
-// 扩展Window接口以包含Electron自定义方法
-declare global {
-  interface Window {
-    Electron?: {
-      onCheckUnsaveChanges: (callback: () => void) => void;
-      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
-    };
-    electronAPI?: {
-      onCheckUnsaveChanges: (callback: () => void) => void;
-      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
-      notifyProjectSaved: () => void;
-      onRequestSaveBeforeQuit: (callback: () => void) => void;
-    };
-  }
-}
+// 扩展Window接口以包含Electron自定义方法 - 现在已在 types/electron.d.ts 中统一定义
 
 const App: React.FC = () => {
   // 初始化默认标签页
@@ -102,9 +88,7 @@ const App: React.FC = () => {
     
     const tabToClose = tabs.find(tab => tab.id === tabId);
     if (tabToClose && tabToClose.hasUnsavedChanges) {
-      if (!confirm("此标签页有未保存的更改，确定要关闭吗？")) {
-        return;
-      }
+      // 如果标签页有未保存的更改，这里不再提示用户确认
     }
     
     const newTabs = tabs.filter(tab => tab.id !== tabId);
@@ -150,75 +134,6 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Unsaved Changes Warning ---
-  useEffect(() => {
-    // 计算所有标签页中是否有未保存的更改
-    const totalUnsavedChanges = tabs.some(tab => tab.hasUnsavedChanges);
-    
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (totalUnsavedChanges) {
-        e.preventDefault();
-        e.returnValue = ''; // Chrome requires returnValue to be set
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // Update Title
-    document.title = totalUnsavedChanges ? "StringLightCAD * (未保存)" : "StringLightCAD";
-
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [tabs]);
-
-  // Electron环境下监听主进程的检查未保存更改消息
-  useEffect(() => {
-    const handleCheckUnsavedChanges = () => {
-      // 计算所有标签页中是否有未保存的更改
-      const totalUnsavedChanges = tabs.some(tab => tab.hasUnsavedChanges);
-      
-      // 通过预加载脚本暴露的API回复主进程
-      if (window.electronAPI && window.electronAPI.replyUnsaveChanges) {
-        window.electronAPI.replyUnsaveChanges(totalUnsavedChanges);
-      } else if (window.Electron && window.Electron.replyUnsaveChanges) {
-        window.Electron.replyUnsaveChanges(totalUnsavedChanges);
-      }
-    };
-
-    // 添加对保存请求的处理
-    const handleRequestSaveBeforeQuit = () => {
-      // 执行保存操作
-      handleSaveProject();
-      // 保存完成后通知主进程
-      if (window.electronAPI && window.electronAPI.notifyProjectSaved) {
-        window.electronAPI.notifyProjectSaved();
-      }
-    };
-
-    // 用于存储清理函数的变量
-    let cleanupCheckUnsaved = null;
-    let cleanupRequestSave = null;
-
-    // 添加事件监听器
-    if (window.electronAPI && window.electronAPI.onCheckUnsaveChanges) {
-      cleanupCheckUnsaved = window.electronAPI.onCheckUnsaveChanges(handleCheckUnsavedChanges);
-    } else if (window.Electron && window.Electron.onCheckUnsaveChanges) {
-      window.Electron.onCheckUnsaveChanges(handleCheckUnsavedChanges);
-    }
-
-    // 监听主进程的保存请求
-    if (window.electronAPI && window.electronAPI.onRequestSaveBeforeQuit) {
-      cleanupRequestSave = window.electronAPI.onRequestSaveBeforeQuit(handleRequestSaveBeforeQuit);
-    }
-
-    // 清理事件监听器
-    return () => {
-      if (cleanupCheckUnsaved && typeof cleanupCheckUnsaved === 'function') {
-        cleanupCheckUnsaved();
-      }
-      if (cleanupRequestSave && typeof cleanupRequestSave === 'function') {
-        cleanupRequestSave();
-      }
-    };
-  }, [tabs]);
 
   // --- History Management ---
   
@@ -1108,21 +1023,28 @@ const App: React.FC = () => {
               timestamp: new Date().toISOString(),
               objects: activeTab.objects
           };
-      const json = JSON.stringify(projectData, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
-      link.click();
-      
-      // 标记当前标签页为已保存
-      updateActiveTab({ hasUnsavedChanges: false });
-      
-      // 如果在Electron环境中，通知主进程项目已保存
-      if (window.electronAPI && window.electronAPI.notifyProjectSaved) {
-        window.electronAPI.notifyProjectSaved();
-      }
-      
+          const json = JSON.stringify(projectData, null, 2);
+          
+          // 如果在Electron环境中，使用Electron API保存文件
+          if (window.electronAPI) {
+            window.electronAPI.saveFile(`${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`, json)
+              .then(() => {
+                updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
+              })
+              .catch((err) => {
+                  setError("保存项目时发生错误");
+                  console.error("Save project error", err);
+              });
+          } else {
+            // 浏览器环境的备用方案
+            const blob = new Blob([json], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+            link.click();
+            updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
+          }
+          
       } catch (err) {
           setError("保存项目时发生错误");
           console.error("Save project error", err);
@@ -1183,24 +1105,84 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // 添加一个effect来处理错误自动消失
+  // 添加未保存更改状态和确认对话框状态
+  const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false);
+  const [isSavingBeforeQuit, setIsSavingBeforeQuit] = useState(false);
+  
+  // 添加对Electron关闭检查事件的监听
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
-    
-    if (error) {
-      // 设置5秒后自动清除错误
-      timeoutId = setTimeout(() => {
-        setError(null);
-      }, 5000);
+    if (window.electronAPI) {
+      // 监听检查未保存更改的请求
+      const unlistenCheckChanges = window.electronAPI.onCheckUnsavedChanges(() => {
+        // 检查是否有任何标签页有未保存的更改
+        const hasUnsaved = tabs.some(tab => tab.hasUnsavedChanges);
+        window.electronAPI?.replyUnsavedChanges(hasUnsaved);
+      });
+      
+      // 监听保存项目前的请求
+      const unlistenSaveBeforeQuit = window.electronAPI.onRequestSaveBeforeQuit(() => {
+        setIsSavingBeforeQuit(true);
+        handleSaveProjectForQuit();
+      });
+      
+      // 监听显示关闭确认对话框的请求
+      const unlistenShowCloseConfirm = window.electronAPI.onShowCloseConfirmDialog(() => {
+        setShowCloseConfirmDialog(true);
+      });
+      
+      // 组件卸载时清理监听器
+      return () => {
+        if (unlistenCheckChanges) unlistenCheckChanges();
+        if (unlistenSaveBeforeQuit) unlistenSaveBeforeQuit();
+        if (unlistenShowCloseConfirm) unlistenShowCloseConfirm();
+      };
     }
     
-    // 清理函数，组件卸载或error变化时清除定时器
-    return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+    // 如果不在Electron环境中，也要清理
+    return () => {};
+  }, [tabs]);
+  
+  // 处理保存项目并退出
+  const handleSaveProjectForQuit = () => {
+    try {
+      const projectData = {
+        version: "1.0",
+        timestamp: new Date().toISOString(),
+        objects: activeTab.objects
+      };
+      const json = JSON.stringify(projectData, null, 2);
+      
+      // 如果在Electron环境中，使用Electron API保存文件
+      if (window.electronAPI) {
+        window.electronAPI.saveFile(`${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`, json)
+          .then((filePath) => {
+            // 保存成功后，更新当前标签页的未保存状态，并通知主进程项目已保存
+            updateActiveTab({ hasUnsavedChanges: false });
+            window.electronAPI?.sendProjectSaved();
+            setIsSavingBeforeQuit(false);
+          })
+          .catch((err) => {
+            console.error("Save project error", err);
+            setError("保存项目失败");
+            setIsSavingBeforeQuit(false);
+          });
+      } else {
+        // 浏览器环境的备用方案
+        const blob = new Blob([json], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+        link.click();
+        updateActiveTab({ hasUnsavedChanges: false });
+        setIsSavingBeforeQuit(false);
       }
-    };
-  }, [error]);
+    } catch (err) {
+      setError("保存项目时发生错误");
+      console.error("Save project error", err);
+      setIsSavingBeforeQuit(false);
+    }
+  };
+
   
   const selectedObject = activeTab.selectedIds.length === 1 
     ? activeTab.objects.find((obj) => obj.id === activeTab.selectedIds[0]) || null 
@@ -1234,6 +1216,69 @@ const App: React.FC = () => {
         onClose={() => setShowLibrary(false)}
         onSelect={handleLibraryImport}
       />
+      
+      {/* Close Confirmation Dialog */}
+      {isSavingBeforeQuit && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-300 rounded-2xl shadow-2xl transform transition-all duration-200 scale-100 w-full max-w-md p-8 relative">
+            <div className="text-center">
+              <div className="mx-auto bg-gradient-to-br from-blue-100 to-blue-200 w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                <i className="fas fa-spinner animate-spin text-blue-600 text-2xl"></i>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-3">正在保存项目...</h2>
+              <p className="text-gray-600 mb-6 leading-relaxed">正在保存您的项目，请稍候...</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Confirm Close Dialog */}
+      {showCloseConfirmDialog && !isSavingBeforeQuit && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-300 rounded-2xl shadow-2xl transform transition-all duration-200 scale-100 w-full max-w-md p-8 relative">
+            <div className="text-center">
+              <div className="mx-auto bg-gradient-to-br from-red-100 to-red-200 w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                <i className="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-3">确认退出</h2>
+              <p className="text-gray-600 mb-2 leading-relaxed">您有未保存的更改，确定要退出吗？</p>
+              <p className="text-gray-500 text-sm mb-6">如果直接退出，您的更改将会丢失。</p>
+              
+              <div className="flex flex-col gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    // 当用户点击"取消"时，隐藏对话框
+                    setShowCloseConfirmDialog(false);
+                    
+                    // 通知主进程取消关闭操作，重置isQuitting标志
+                    if (window.electronAPI) {
+                      window.electronAPI.cancelAppQuit();
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gray-500 to-gray-600 text-white font-medium hover:from-gray-600 hover:to-gray-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-times mr-2"></i>取消
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCloseConfirmDialog(false);
+                    handleSaveProjectForQuit();
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-save mr-2"></i>保存并退出
+                </button>
+                <button
+                  onClick={() => window.close()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-sign-out-alt mr-2"></i>直接退出
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="h-32 bg-white border-b border-gray-200 flex px-6 shadow-sm z-10 py-4">
         <div className="flex-shrink-0 text-2xl font-bold text-blue-600 mr-6 flex items-center gap-4 h-full">

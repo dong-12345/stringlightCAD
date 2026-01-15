@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   // 发送未保存更改的回复
-  sendUnsavedChangesReply: (hasUnsavedChanges) => {
+  replyUnsavedChanges: (hasUnsavedChanges) => {
     ipcRenderer.send('unsave-changes-reply', hasUnsavedChanges);
   },
   
@@ -40,11 +40,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('project-saved');
   },
   
+  // 发送取消关闭应用的消息
+  cancelAppQuit: () => {
+    ipcRenderer.send('cancel-app-quit');
+  },
+  
   // 监听项目已保存消息
   onProjectSaved: (callback) => {
     const listener = (event, ...args) => callback(...args);
     ipcRenderer.on('project-saved', listener);
     return () => ipcRenderer.removeListener('project-saved', listener);
+  },
+  
+  // 监听显示关闭确认对话框的消息
+  onShowCloseConfirmDialog: (callback) => {
+    const listener = (event, ...args) => callback(...args);
+    ipcRenderer.on('show-close-confirm-dialog', listener);
+    return () => ipcRenderer.removeListener('show-close-confirm-dialog', listener);
   },
   
   // 获取当前平台信息

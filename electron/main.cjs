@@ -206,33 +206,9 @@ ipcMain.on('unsave-changes-reply', (event, hasUnsavedChanges) => {
   if (!mainWindow) return;
   
   if (hasUnsavedChanges) {
-    // 显示确认对话框
-    dialog.showMessageBox(mainWindow, {
-      type: 'warning',
-      buttons: ['取消', '保存并退出', '直接退出'],
-      title: '确认退出',
-      message: '您有未保存的更改，确定要退出吗？',
-      detail: '如果直接退出，您的更改将会丢失。',
-      defaultId: 0,
-      cancelId: 0
-    }).then(({ response }) => {
-      // response: 0=取消, 1=保存并退出, 2=直接退出
-      if (response === 0) {
-        // 用户取消，重置退出标志
-        isQuitting = false;
-        return;
-      } else if (response === 1) {
-        // 用户选择保存并退出，发送保存指令给渲染进程
-        mainWindow.webContents.send('request-save-before-quit');
-      } else if (response === 2) {
-        // 用户选择直接退出，关闭应用
-        forceCloseApp();
-      }
-    }).catch(err => {
-      console.error('Dialog error:', err);
-      // 出错时也允许退出
-      forceCloseApp();
-    });
+    // 对于有未保存更改的情况，现在我们将在渲染进程中显示自定义对话框
+    // 所以我们只需向渲染进程发送显示对话框的消息
+    mainWindow.webContents.send('show-close-confirm-dialog');
   } else {
     // 没有未保存的更改，直接关闭
     forceCloseApp();
@@ -241,9 +217,20 @@ ipcMain.on('unsave-changes-reply', (event, hasUnsavedChanges) => {
 
 // 添加IPC处理器，接收渲染进程的保存完成通知
 ipcMain.on('project-saved', () => {
-  // 项目已保存，但不应该自动关闭应用，只是移除退出标志
-  // 之前是直接调用forceCloseApp()，现在改为仅重置退出标志
+  // 项目已保存，关闭应用
+  forceCloseApp();
+});
+
+// 添加IPC处理器，接收渲染进程的取消关闭请求
+ipcMain.on('cancel-app-quit', () => {
+  // 用户取消了关闭操作，重置退出标志
   isQuitting = false;
+});
+
+// 监听渲染进程请求保存的通知
+ipcMain.on('request-save-before-quit', () => {
+  // 向渲染进程发送保存指令
+  mainWindow.webContents.send('request-save-before-quit');
 });
 
 // 强制关闭应用

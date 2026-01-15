@@ -19,20 +19,7 @@ declare global {
       meshStandardMaterial: any;
     }
   }
-  
-  // 扩展Window接口以包含Electron自定义方法
-  interface Window {
-    electronAPI?: {
-      onCheckUnsaveChanges: (callback: () => void) => void;
-      replyUnsaveChanges: (hasUnsavedChanges: boolean) => void;
-      notifyProjectSaved: () => void;
-      onRequestSaveBeforeQuit: (callback: () => void) => void;
-    };
-    modelsAPI?: {
-      getModelsList: () => Promise<ModelEntry[]>;
-      getModelContent: (filePath: string) => Promise<ArrayBuffer>;
-    };
-  }
+  // Window接口扩展现在已在types/electron.d.ts中统一定义
 }
 
 // 定义模型库组件的属性接口
