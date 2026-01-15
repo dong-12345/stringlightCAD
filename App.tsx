@@ -134,6 +134,77 @@ const App: React.FC = () => {
     }
   };
 
+  // 保存项目后关闭标签页的回调函数
+  const handleSaveAndCloseTab = (tabId: string) => {
+    try {
+      setIsLoading(true);
+      const projectData = {
+        version: "1.0",
+        timestamp: new Date().toISOString(),
+        objects: activeTab.objects
+      };
+      const json = JSON.stringify(projectData, null, 2);
+      
+      // 如果在Electron环境中，使用Electron API保存文件
+      if (window.electronAPI) {
+        // 先显示保存对话框让用户选择保存路径
+        window.electronAPI.showSaveDialog()
+          .then(result => {
+            if (!result.canceled) {
+              // 用户选择了保存路径，执行保存
+              return window.electronAPI.saveFile(result.filePath, json)
+                .then(saveResult => {
+                  // 成功保存后，更新标签页名称和状态
+                  // 提取文件名（不含扩展名）
+                  const fileName = result.filePath.split('\\').pop().split('/').pop().replace(/\.sl3d$/, '');
+                  updateActiveTab({ 
+                    name: fileName,
+                    hasUnsavedChanges: false 
+                  });
+                  
+                  // 保存成功后，关闭标签页
+                  performTabClose(tabId);
+                  setShowTabCloseConfirmDialog(false);
+                  setTabToClose(null);
+                });
+            } else {
+              // 用户取消了保存操作
+              console.log("Save operation cancelled by user");
+              setShowTabCloseConfirmDialog(false);
+              setTabToClose(null);
+            }
+          })
+          .catch((err) => {
+            setError("保存项目时发生错误");
+            console.error("Save project error", err);
+            setShowTabCloseConfirmDialog(false);
+            setTabToClose(null);
+          });
+      } else {
+        // 浏览器环境的备用方案
+        const blob = new Blob([json], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+        link.click();
+        updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
+        
+        // 保存后关闭标签页
+        performTabClose(tabId);
+        setShowTabCloseConfirmDialog(false);
+        setTabToClose(null);
+      }
+      
+    } catch (err) {
+      setError("保存项目时发生错误");
+      console.error("Save project error", err);
+      setShowTabCloseConfirmDialog(false);
+      setTabToClose(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // 重命名标签页
   const renameTab = (tabId: string, newName: string) => {
     if (!newName.trim()) return;
@@ -1359,15 +1430,10 @@ const App: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    // 保存当前标签页的更改
-                    setShowTabCloseConfirmDialog(false);
-                    // 这里可以调用保存功能
-                    handleSaveProject();
-                    // 然后关闭标签页
+                    // 保存当前标签页的更改然后关闭标签页
                     if (tabToClose) {
-                      performTabClose(tabToClose);
+                      handleSaveAndCloseTab(tabToClose);
                     }
-                    setTabToClose(null);
                   }}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-opacity-50 shadow-lg w-full"
                 >
