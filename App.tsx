@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as THREE from 'three';
@@ -11,8 +10,11 @@ import { ObjectList } from './components/ObjectList';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Toolbar } from './components/Toolbar';
 import { ModelLibrary } from './components/ModelLibrary';
-import { CADObject, ShapeType, DEFAULT_COLOR, WorkPlaneState } from './types';
+import { CADObject, ShapeType, DEFAULT_COLOR, WorkPlaneState, TabState } from './types';
 import { getObjectHalfHeight } from './utils';
+
+// Maximum history steps to keep memory usage in check
+const MAX_HISTORY = 50;
 
 // 扩展Window接口以包含Electron自定义方法
 declare global {
@@ -30,51 +32,131 @@ declare global {
   }
 }
 
-// Maximum history steps to keep memory usage in check
-const MAX_HISTORY = 50;
-
 const App: React.FC = () => {
-  const [objects, setObjects] = useState<CADObject[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [transformMode, setTransformMode] = useState<'translate' | 'rotate' | 'scale'>('translate');
+  // 初始化默认标签页
+  const defaultTabId = uuidv4();
+  const [tabs, setTabs] = useState<TabState[]>([{
+    id: defaultTabId,
+    name: '未命名项目',
+    objects: [],
+    selectedIds: [],
+    transformMode: 'translate',
+    pendingOp: null,
+    workPlane: {
+      step: 'IDLE',
+      planeData: null,
+      sourceObjId: null,
+      flipOrientation: false
+    },
+    floorMode: false,
+    hasUnsavedChanges: false,
+    history: [{ objects: [], selectedIds: [] }],
+    historyIndex: 0
+  }]);
+  const [activeTabId, setActiveTabId] = useState<string>(defaultTabId);
+
+  // 获取当前活动标签页
+  const activeTab = tabs.find(tab => tab.id === activeTabId) || tabs[0];
+
+  // 更新当前活动标签页的状态
+  const updateActiveTab = (updates: Partial<TabState>) => {
+    setTabs(prevTabs => 
+      prevTabs.map(tab => 
+        tab.id === activeTabId ? { ...tab, ...updates } : tab
+      )
+    );
+  };
+
+  // 创建新标签页
+  const createNewTab = () => {
+    const newTabId = uuidv4();
+    const newTab: TabState = {
+      id: newTabId,
+      name: `未命名项目 ${tabs.length + 1}`,
+      objects: [],
+      selectedIds: [],
+      transformMode: 'translate',
+      pendingOp: null,
+      workPlane: {
+        step: 'IDLE',
+        planeData: null,
+        sourceObjId: null,
+        flipOrientation: false
+      },
+      floorMode: false,
+      hasUnsavedChanges: false,
+      history: [{ objects: [], selectedIds: [] }],
+      historyIndex: 0
+    };
+    
+    setTabs([...tabs, newTab]);
+    setActiveTabId(newTabId);
+  };
+
+  // 关闭标签页
+  const closeTab = (tabId: string) => {
+    if (tabs.length <= 1) {
+      alert("至少要保留一个标签页！");
+      return;
+    }
+    
+    const tabToClose = tabs.find(tab => tab.id === tabId);
+    if (tabToClose && tabToClose.hasUnsavedChanges) {
+      if (!confirm("此标签页有未保存的更改，确定要关闭吗？")) {
+        return;
+      }
+    }
+    
+    const newTabs = tabs.filter(tab => tab.id !== tabId);
+    setTabs(newTabs);
+    
+    if (activeTabId === tabId) {
+      setActiveTabId(newTabs[0].id);
+    }
+  };
+
+  // 重命名标签页
+  const renameTab = (tabId: string, newName: string) => {
+    if (!newName.trim()) return;
+    setTabs(tabs.map(tab => 
+      tab.id === tabId ? { ...tab, name: newName } : tab
+    ));
+  };
+
+  // 双击重命名功能
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   
-  // Pending boolean operation state (waiting for second object)
-  const [pendingOp, setPendingOp] = useState<{ type: 'UNION' | 'SUBTRACT', baseId: string } | null>(null);
+  const handleRenameTab = (tabId: string) => {
+    setRenamingTabId(tabId);
+  };
+  
+  const finishRename = (newName: string, tabId: string) => {
+    renameTab(tabId, newName);
+    setRenamingTabId(null);
+  };
+
+  // 切换标签页
+  const switchTab = (tabId: string) => {
+    setActiveTabId(tabId);
+  };
 
   // Model Library Modal State
   const [showLibrary, setShowLibrary] = useState(false);
 
-  // Floor Constraint Mode
-  const [floorMode, setFloorMode] = useState(false);
-
-  // Work Plane State
-  const [workPlane, setWorkPlane] = useState<WorkPlaneState>({
-    step: 'IDLE',
-    planeData: null,
-    sourceObjId: null,
-    flipOrientation: false
-  });
-
   // Panel Visibility State
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
-
-  // Unsaved Changes State
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
-  // History State
-  const [history, setHistory] = useState<{objects: CADObject[], selectedIds: string[]}[]>([
-    { objects: [], selectedIds: [] }
-  ]);
-  const [historyIndex, setHistoryIndex] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
 
   // --- Unsaved Changes Warning ---
   useEffect(() => {
+    // 计算所有标签页中是否有未保存的更改
+    const totalUnsavedChanges = tabs.some(tab => tab.hasUnsavedChanges);
+    
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
+      if (totalUnsavedChanges) {
         e.preventDefault();
         e.returnValue = ''; // Chrome requires returnValue to be set
       }
@@ -82,19 +164,22 @@ const App: React.FC = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     
     // Update Title
-    document.title = hasUnsavedChanges ? "StringLightCAD * (未保存)" : "StringLightCAD";
+    document.title = totalUnsavedChanges ? "StringLightCAD * (未保存)" : "StringLightCAD";
 
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, [tabs]);
 
   // Electron环境下监听主进程的检查未保存更改消息
   useEffect(() => {
     const handleCheckUnsavedChanges = () => {
+      // 计算所有标签页中是否有未保存的更改
+      const totalUnsavedChanges = tabs.some(tab => tab.hasUnsavedChanges);
+      
       // 通过预加载脚本暴露的API回复主进程
       if (window.electronAPI && window.electronAPI.replyUnsaveChanges) {
-        window.electronAPI.replyUnsaveChanges(hasUnsavedChanges);
+        window.electronAPI.replyUnsaveChanges(totalUnsavedChanges);
       } else if (window.Electron && window.Electron.replyUnsaveChanges) {
-        window.Electron.replyUnsaveChanges(hasUnsavedChanges);
+        window.Electron.replyUnsaveChanges(totalUnsavedChanges);
       }
     };
 
@@ -133,44 +218,68 @@ const App: React.FC = () => {
         cleanupRequestSave();
       }
     };
-  }, [hasUnsavedChanges, objects]);
+  }, [tabs]);
 
   // --- History Management ---
   
   // Save a new state to history. 
   const pushHistory = (newObjects: CADObject[], newSelectedIds: string[]) => {
     const currentEntry = { objects: newObjects, selectedIds: newSelectedIds };
-    const newHistory = history.slice(0, historyIndex + 1);
+    const newHistory = activeTab.history.slice(0, activeTab.historyIndex + 1);
     newHistory.push(currentEntry);
     if (newHistory.length > MAX_HISTORY) newHistory.shift();
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
-    setHasUnsavedChanges(true); // Mark as dirty
+    
+    updateActiveTab({
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+      hasUnsavedChanges: true // Mark as dirty
+    });
   };
 
   const handleUndo = () => {
-    if (historyIndex > 0) {
-      setPendingOp(null);
-      setWorkPlane(prev => ({ ...prev, step: 'IDLE', planeData: null, sourceObjId: null }));
-      const prevIndex = historyIndex - 1;
-      const prevState = history[prevIndex];
-      setObjects(prevState.objects);
-      setSelectedIds(prevState.selectedIds);
-      setHistoryIndex(prevIndex);
-      // Undo technically reverts to a previous state, which might still be "unsaved" relative to disk,
-      // but we keep it marked as unsaved to ensure user knows to save.
-      setHasUnsavedChanges(true); 
+    if (activeTab.historyIndex > 0) {
+      updateActiveTab({
+        pendingOp: null,
+        workPlane: { ...activeTab.workPlane, step: 'IDLE', planeData: null, sourceObjId: null }
+      });
+      
+      const prevIndex = activeTab.historyIndex - 1;
+      const prevState = activeTab.history[prevIndex];
+      
+      updateActiveTab({
+        objects: prevState.objects,
+        selectedIds: prevState.selectedIds,
+        historyIndex: prevIndex
+      });
+    }
+  };
+
+  const handleRedo = () => {
+    if (activeTab.historyIndex < activeTab.history.length - 1) {
+      updateActiveTab({
+        pendingOp: null,
+        workPlane: { ...activeTab.workPlane, step: 'IDLE', planeData: null, sourceObjId: null }
+      });
+      
+      const nextIndex = activeTab.historyIndex + 1;
+      const nextState = activeTab.history[nextIndex];
+      
+      updateActiveTab({
+        objects: nextState.objects,
+        selectedIds: nextState.selectedIds,
+        historyIndex: nextIndex
+      });
     }
   };
 
   const handleCommit = () => {
-    pushHistory(objects, selectedIds);
+    pushHistory(activeTab.objects, activeTab.selectedIds);
   };
 
   // --- Core Boolean Logic ---
   const executeBooleanOp = (op: 'UNION' | 'SUBTRACT', baseId: string, toolId: string) => {
-    const obj1 = objects.find(o => o.id === baseId);
-    const obj2 = objects.find(o => o.id === toolId);
+    const obj1 = activeTab.objects.find(o => o.id === baseId);
+    const obj2 = activeTab.objects.find(o => o.id === toolId);
     
     if (!obj1 || !obj2) return;
     if (obj1.locked) {
@@ -241,17 +350,21 @@ const App: React.FC = () => {
       };
 
       const nextObjects = [
-        ...objects.filter(o => o.id !== obj1.id && o.id !== obj2.id),
+        ...activeTab.objects.filter(o => o.id !== obj1.id && o.id !== obj2.id),
         newObj
       ];
       const nextSelected = [id];
 
-      setObjects(nextObjects);
-      setSelectedIds(nextSelected);
+      updateActiveTab({
+        objects: nextObjects,
+        selectedIds: nextSelected
+      });
       pushHistory(nextObjects, nextSelected);
       
-      if (workPlane.step === 'ACTIVE') {
-          setWorkPlane(prev => ({ ...prev, sourceObjId: id }));
+      if (activeTab.workPlane.step === 'ACTIVE') {
+          updateActiveTab({
+            workPlane: { ...activeTab.workPlane, sourceObjId: id }
+          });
       }
 
     } catch (e) {
@@ -317,18 +430,22 @@ const App: React.FC = () => {
   // --- Work Plane Math & Logic ---
 
   const initWorkPlaneMode = () => {
-    setPendingOp(null);
-    setWorkPlane({
-      step: 'PICKING_TARGET',
-      planeData: null,
-      sourceObjId: null,
-      flipOrientation: false
+    updateActiveTab({
+      pendingOp: null,
+      workPlane: {
+        step: 'PICKING_TARGET',
+        planeData: null,
+        sourceObjId: null,
+        flipOrientation: false
+      },
+      selectedIds: []
     });
-    setSelectedIds([]); 
   };
 
   const cancelWorkPlane = () => {
-    setWorkPlane({ step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false });
+    updateActiveTab({
+      workPlane: { step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false }
+    });
   };
 
   const alignObjectToPlane = (
@@ -339,8 +456,8 @@ const App: React.FC = () => {
     targetNormal: THREE.Vector3,
     flip: boolean
   ): CADObject[] => {
-    const obj = objects.find(o => o.id === sourceId);
-    if (!obj || obj.locked) return objects;
+    const obj = activeTab.objects.find(o => o.id === sourceId);
+    if (!obj || obj.locked) return activeTab.objects;
 
     // 1. Calculate Target Direction (World Space)
     const planeDir = targetNormal.clone().normalize();
@@ -370,9 +487,11 @@ const App: React.FC = () => {
       rotation: [newRot.x, newRot.y, newRot.z] as [number, number, number]
     };
 
-    const nextObjects = objects.map(o => o.id === sourceId ? updatedObj : o);
-    setObjects(nextObjects);
-    setSelectedIds([sourceId]); 
+    const nextObjects = activeTab.objects.map(o => o.id === sourceId ? updatedObj : o);
+    updateActiveTab({
+      objects: nextObjects,
+      selectedIds: [sourceId]
+    });
     
     return nextObjects;
   };
@@ -395,38 +514,40 @@ const App: React.FC = () => {
 
   const handleSceneClick = (id: string | null, point?: THREE.Vector3, normal?: THREE.Vector3) => {
     // 1. Work Plane: Pick Target
-    if (workPlane.step === 'PICKING_TARGET') {
+    if (activeTab.workPlane.step === 'PICKING_TARGET') {
       if (id && point && normal) {
-        setWorkPlane(prev => ({
-          ...prev,
-          step: 'PICKING_SOURCE',
-          planeData: {
-            position: [point.x, point.y, point.z],
-            normal: [normal.x, normal.y, normal.z],
-            targetObjId: id
+        updateActiveTab({
+          workPlane: {
+            ...activeTab.workPlane,
+            step: 'PICKING_SOURCE',
+            planeData: {
+              position: [point.x, point.y, point.z],
+              normal: [normal.x, normal.y, normal.z],
+              targetObjId: id
+            }
           }
-        }));
+        });
       }
       return;
     }
 
     // 2. Work Plane: Pick Source (First Alignment)
-    if (workPlane.step === 'PICKING_SOURCE') {
-      if (id && point && normal && workPlane.planeData) {
-        if (id === workPlane.planeData.targetObjId) {
+    if (activeTab.workPlane.step === 'PICKING_SOURCE') {
+      if (id && point && normal && activeTab.workPlane.planeData) {
+        if (id === activeTab.workPlane.planeData.targetObjId) {
           alert("请选择另一个不同的物体作为基准物体");
           return;
         }
         
-        const obj = objects.find(o => o.id === id);
+        const obj = activeTab.objects.find(o => o.id === id);
         if (obj) {
             if (obj.locked) {
                 alert("该物体已锁定，无法对齐");
                 return;
             }
             const localData = calculateLocalData(obj, point, normal);
-            const targetPoint = new THREE.Vector3(...workPlane.planeData.position);
-            const targetNormal = new THREE.Vector3(...workPlane.planeData.normal);
+            const targetPoint = new THREE.Vector3(...activeTab.workPlane.planeData.position);
+            const targetNormal = new THREE.Vector3(...activeTab.workPlane.planeData.normal);
             
             const nextObjects = alignObjectToPlane(
                 id, 
@@ -437,13 +558,15 @@ const App: React.FC = () => {
                 false
             );
 
-            setWorkPlane(prev => ({
-              ...prev,
-              step: 'ACTIVE',
-              sourceObjId: id,
-              sourceLocalData: localData,
-              flipOrientation: false
-            }));
+            updateActiveTab({
+              workPlane: {
+                ...activeTab.workPlane,
+                step: 'ACTIVE',
+                sourceObjId: id,
+                sourceLocalData: localData,
+                flipOrientation: false
+              }
+            });
             
             pushHistory(nextObjects, [id]);
         }
@@ -452,9 +575,9 @@ const App: React.FC = () => {
     }
 
     // 3. Work Plane: Active Mode - Click to Align/Select
-    if (workPlane.step === 'ACTIVE' && id && point && normal && workPlane.planeData) {
-         if (id !== workPlane.planeData.targetObjId) {
-             const obj = objects.find(o => o.id === id);
+    if (activeTab.workPlane.step === 'ACTIVE' && id && point && normal && activeTab.workPlane.planeData) {
+         if (id !== activeTab.workPlane.planeData.targetObjId) {
+             const obj = activeTab.objects.find(o => o.id === id);
              if (obj) {
                  if (obj.locked) {
                      handleSelect(id, false, point, normal);
@@ -462,8 +585,8 @@ const App: React.FC = () => {
                  }
                  const localData = calculateLocalData(obj, point, normal);
                  
-                 const targetPoint = new THREE.Vector3(...workPlane.planeData.position);
-                 const targetNormal = new THREE.Vector3(...workPlane.planeData.normal);
+                 const targetPoint = new THREE.Vector3(...activeTab.workPlane.planeData.position);
+                 const targetNormal = new THREE.Vector3(...activeTab.workPlane.planeData.normal);
                  
                  // Align new object to original target point
                  const nextObjects = alignObjectToPlane(
@@ -476,12 +599,14 @@ const App: React.FC = () => {
                  );
                  pushHistory(nextObjects, [id]);
 
-                 setWorkPlane(prev => ({ 
-                     ...prev, 
+                 updateActiveTab({
+                   workPlane: { 
+                     ...activeTab.workPlane, 
                      sourceObjId: id,
                      sourceLocalData: localData,
                      flipOrientation: false
-                 }));
+                   }
+                 });
 
                  handleSelect(id, false, point, normal);
                  return;
@@ -493,15 +618,17 @@ const App: React.FC = () => {
   };
   
   const toggleFlip = () => {
-    if (workPlane.step === 'ACTIVE' && workPlane.sourceObjId && workPlane.planeData && workPlane.sourceLocalData) {
-       const obj = objects.find(o => o.id === workPlane.sourceObjId);
+    if (activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.sourceObjId && activeTab.workPlane.planeData && activeTab.workPlane.sourceLocalData) {
+       const obj = activeTab.objects.find(o => o.id === activeTab.workPlane.sourceObjId);
        if (!obj || obj.locked) return;
        
-       const newFlipState = !workPlane.flipOrientation;
-       setWorkPlane(prev => ({ ...prev, flipOrientation: newFlipState }));
+       const newFlipState = !activeTab.workPlane.flipOrientation;
+       updateActiveTab({
+         workPlane: { ...activeTab.workPlane, flipOrientation: newFlipState }
+       });
 
-       const localPoint = new THREE.Vector3(...workPlane.sourceLocalData.point);
-       const localNormal = new THREE.Vector3(...workPlane.sourceLocalData.normal);
+       const localPoint = new THREE.Vector3(...activeTab.workPlane.sourceLocalData.point);
+       const localNormal = new THREE.Vector3(...activeTab.workPlane.sourceLocalData.normal);
        
        const currentQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(...obj.rotation));
        const scale = new THREE.Vector3(...obj.scale);
@@ -509,7 +636,7 @@ const App: React.FC = () => {
        
        const currentWorldAnchor = scaledLocalPoint.clone().applyQuaternion(currentQuat).add(new THREE.Vector3(...obj.position));
        
-       const targetNormal = new THREE.Vector3(...workPlane.planeData.normal);
+       const targetNormal = new THREE.Vector3(...activeTab.workPlane.planeData.normal);
        
        const nextObjects = alignObjectToPlane(
            obj.id,
@@ -531,36 +658,40 @@ const App: React.FC = () => {
 
   // --- Selection ---
   const handleSelect = (id: string | null, multi: boolean = false, point?: THREE.Vector3, normal?: THREE.Vector3) => {
-    if (pendingOp) {
+    if (activeTab.pendingOp) {
       if (id === null) {
-        setPendingOp(null); 
+        updateActiveTab({ pendingOp: null }); 
         return;
       }
-      if (id === pendingOp.baseId) return;
-      executeBooleanOp(pendingOp.type, pendingOp.baseId, id);
-      setPendingOp(null);
+      if (id === activeTab.pendingOp.baseId) return;
+      executeBooleanOp(activeTab.pendingOp.type, activeTab.pendingOp.baseId, id);
+      updateActiveTab({ pendingOp: null });
       return;
     }
     
     if (id === null) {
-      if (!multi) setSelectedIds([]);
-      if (workPlane.step === 'ACTIVE') {
-          setWorkPlane(prev => ({ ...prev, sourceObjId: null }));
+      if (!multi) updateActiveTab({ selectedIds: [] });
+      if (activeTab.workPlane.step === 'ACTIVE') {
+          updateActiveTab({
+            workPlane: { ...activeTab.workPlane, sourceObjId: null }
+          });
       }
       return;
     }
 
     if (multi) {
-      setSelectedIds(prev => 
-        prev.includes(id) 
-          ? prev.filter(pid => pid !== id) 
-          : [...prev, id]
-      );
+      updateActiveTab({
+        selectedIds: activeTab.selectedIds.includes(id) 
+            ? activeTab.selectedIds.filter(pid => pid !== id) 
+            : [...activeTab.selectedIds, id]
+      });
     } else {
-      setSelectedIds([id]);
+      updateActiveTab({
+        selectedIds: [id]
+      });
       
-      if (workPlane.step === 'ACTIVE') {
-          const obj = objects.find(o => o.id === id);
+      if (activeTab.workPlane.step === 'ACTIVE') {
+          const obj = activeTab.objects.find(o => o.id === id);
           if (obj) {
              let localData;
              if (point && normal) {
@@ -571,11 +702,13 @@ const App: React.FC = () => {
                      new THREE.Vector3(...obj.position), 
                      new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion().setFromEuler(new THREE.Euler(...obj.rotation))) 
                  );
-                 if (workPlane.sourceObjId === id && workPlane.sourceLocalData) {
-                     localData = workPlane.sourceLocalData;
+                 if (activeTab.workPlane.sourceObjId === id && activeTab.workPlane.sourceLocalData) {
+                     localData = activeTab.workPlane.sourceLocalData;
                  }
              }
-             setWorkPlane(prev => ({ ...prev, sourceObjId: id, sourceLocalData: localData }));
+             updateActiveTab({
+               workPlane: { ...activeTab.workPlane, sourceObjId: id, sourceLocalData: localData }
+             });
           }
       }
     }
@@ -583,7 +716,7 @@ const App: React.FC = () => {
 
   // --- CRUD Operations ---
   const handleAddObject = (type: ShapeType) => {
-    setPendingOp(null); 
+    updateActiveTab({ pendingOp: null }); 
     console.log("Adding object of type:", type);
     
     const id = uuidv4();
@@ -595,8 +728,8 @@ const App: React.FC = () => {
     let isAligned = false;
 
     // If Work Plane is active, spawn object ON the plane
-    if (workPlane.step === 'ACTIVE' && workPlane.planeData) {
-        const pd = workPlane.planeData;
+    if (activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.planeData) {
+        const pd = activeTab.workPlane.planeData;
         position = [pd.position[0], pd.position[1], pd.position[2]];
         
         const normal = new THREE.Vector3(pd.normal[0], pd.normal[1], pd.normal[2]);
@@ -620,31 +753,31 @@ const App: React.FC = () => {
 
     switch (type) {
       case 'cube':
-        newObj = { ...baseProps, name: `方块 ${objects.length + 1}`, params: { width: 50, height: 50, depth: 50 } };
+        newObj = { ...baseProps, name: `方块 ${activeTab.objects.length + 1}`, params: { width: 50, height: 50, depth: 50 } };
         break;
       case 'sphere':
-        newObj = { ...baseProps, name: `球体 ${objects.length + 1}`, params: { radius: 25 } };
+        newObj = { ...baseProps, name: `球体 ${activeTab.objects.length + 1}`, params: { radius: 25 } };
         break;
       case 'cylinder':
-        newObj = { ...baseProps, name: `圆柱 ${objects.length + 1}`, params: { radius: 20, height: 60 } };
+        newObj = { ...baseProps, name: `圆柱 ${activeTab.objects.length + 1}`, params: { radius: 20, height: 60 } };
         break;
       case 'cone':
-        newObj = { ...baseProps, name: `圆锥 ${objects.length + 1}`, params: { radius: 20, height: 60 } };
+        newObj = { ...baseProps, name: `圆锥 ${activeTab.objects.length + 1}`, params: { radius: 20, height: 60 } };
         break;
       case 'prism':
-        newObj = { ...baseProps, name: `三棱柱 ${objects.length + 1}`, params: { radius: 30, height: 60 } };
+        newObj = { ...baseProps, name: `三棱柱 ${activeTab.objects.length + 1}`, params: { radius: 30, height: 60 } };
         break;
       case 'hemisphere':
-        newObj = { ...baseProps, name: `半球体 ${objects.length + 1}`, params: { radius: 25 } };
+        newObj = { ...baseProps, name: `半球体 ${activeTab.objects.length + 1}`, params: { radius: 25 } };
         break;
       case 'half_cylinder':
-        newObj = { ...baseProps, name: `半圆柱 ${objects.length + 1}`, params: { radius: 20, height: 60 } };
+        newObj = { ...baseProps, name: `半圆柱 ${activeTab.objects.length + 1}`, params: { radius: 20, height: 60 } };
         if (!isAligned) {
             newObj.rotation = [0, 0, Math.PI / 2];
         }
         break;
       case 'torus':
-        newObj = { ...baseProps, name: `空心圆柱 ${objects.length + 1}`, params: { radius: 30, tube: 15, height: 40 }};
+        newObj = { ...baseProps, name: `空心圆柱 ${activeTab.objects.length + 1}`, params: { radius: 30, tube: 15, height: 40 }};
         if (!isAligned) {
             newObj.rotation = [0, 0, 0];
         }
@@ -652,7 +785,7 @@ const App: React.FC = () => {
       case 'text':
         newObj = { 
             ...baseProps, 
-            name: `文本 ${objects.length + 1}`, 
+            name: `文本 ${activeTab.objects.length + 1}`, 
             params: { text: "3D Text", radius: 20, height: 5 }
         };
         break;
@@ -661,7 +794,7 @@ const App: React.FC = () => {
     }
 
     // --- Floor Mode Adjustment on Creation ---
-    if (floorMode) {
+    if (activeTab.floorMode) {
         // Use a simple heuristic for initial creation to ensure it doesn't spawn under floor
         const estimatedHalfHeight = getObjectHalfHeight(newObj);
         
@@ -678,72 +811,82 @@ const App: React.FC = () => {
         }
     }
 
-    const nextObjects = [...objects, newObj];
+    const nextObjects = [...activeTab.objects, newObj];
     const nextSelected = [id];
     
-    setObjects(nextObjects);
-    setSelectedIds(nextSelected);
+    updateActiveTab({
+      objects: nextObjects,
+      selectedIds: nextSelected
+    });
     pushHistory(nextObjects, nextSelected);
 
     if (isAligned) {
-        setWorkPlane(prev => ({ 
-            ...prev, 
+        updateActiveTab({
+          workPlane: { 
+            ...activeTab.workPlane, 
             sourceObjId: id, 
             sourceLocalData: { point: [0,0,0], normal: [0,1,0] }
-        }));
+          }
+        });
     }
   };
 
   const handleDeleteObject = () => {
-    setPendingOp(null);
-    if (selectedIds.length > 0) {
+    updateActiveTab({ pendingOp: null });
+    if (activeTab.selectedIds.length > 0) {
       // Cannot delete locked objects
-      const lockedIds = objects.filter(o => selectedIds.includes(o.id) && o.locked).map(o => o.id);
+      const lockedIds = activeTab.objects.filter(o => activeTab.selectedIds.includes(o.id) && o.locked).map(o => o.id);
       if (lockedIds.length > 0) {
           alert("部分选中对象已锁定，无法删除。");
           return;
       }
 
-      const nextObjects = objects.filter((obj) => !selectedIds.includes(obj.id));
+      const nextObjects = activeTab.objects.filter((obj) => !activeTab.selectedIds.includes(obj.id));
       const nextSelected: string[] = [];
       
-      setObjects(nextObjects);
-      setSelectedIds(nextSelected);
+      updateActiveTab({
+        objects: nextObjects,
+        selectedIds: nextSelected
+      });
       pushHistory(nextObjects, nextSelected);
       
-      if (workPlane.step === 'ACTIVE' && workPlane.sourceObjId && selectedIds.includes(workPlane.sourceObjId)) {
-          setWorkPlane(prev => ({ ...prev, sourceObjId: null }));
+      if (activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.sourceObjId && activeTab.selectedIds.includes(activeTab.workPlane.sourceObjId)) {
+          updateActiveTab({
+            workPlane: { ...activeTab.workPlane, sourceObjId: null }
+          });
       }
     }
   };
 
   const handleToggleLock = () => {
-      if (selectedIds.length === 0) return;
-      const nextObjects = objects.map(obj => {
-          if (selectedIds.includes(obj.id)) {
+      if (activeTab.selectedIds.length === 0) return;
+      const nextObjects = activeTab.objects.map(obj => {
+          if (activeTab.selectedIds.includes(obj.id)) {
               return { ...obj, locked: !obj.locked };
           }
           return obj;
       });
-      setObjects(nextObjects);
-      pushHistory(nextObjects, selectedIds);
+      updateActiveTab({
+        objects: nextObjects
+      });
+      pushHistory(nextObjects, activeTab.selectedIds);
   };
 
   const handleUpdateObject = (id: string, updates: Partial<CADObject>) => {
-    setObjects((prev) =>
-      prev.map((obj) => {
-        if (obj.id !== id) return obj;
+    updateActiveTab({
+      objects: activeTab.objects.map((obj) => {
+          if (obj.id !== id) return obj;
 
-        // 1. Lock Check
-        if (obj.locked && !updates.hasOwnProperty('locked')) {
-            // Allow unlocking via updates if passed explicitly, otherwise block
-            return obj; 
-        }
+          // 1. Lock Check
+          if (obj.locked && !updates.hasOwnProperty('locked')) {
+              // Allow unlocking via updates if passed explicitly, otherwise block
+              return obj; 
+          }
 
-        const newObj = { ...obj, ...updates };
-        return newObj;
-      })
-    );
+          const newObj = { ...obj, ...updates };
+          return newObj;
+        })
+    });
   };
 
   const ensureAttributes = (geometry: THREE.BufferGeometry) => {
@@ -824,24 +967,24 @@ const App: React.FC = () => {
   };
 
   const handleBooleanOperation = (op: 'UNION' | 'SUBTRACT') => {
-    if (selectedIds.length === 2) {
-      executeBooleanOp(op, selectedIds[0], selectedIds[1]);
+    if (activeTab.selectedIds.length === 2) {
+      executeBooleanOp(op, activeTab.selectedIds[0], activeTab.selectedIds[1]);
       return;
     }
-    if (selectedIds.length === 1) {
-      setPendingOp({ type: op, baseId: selectedIds[0] });
+    if (activeTab.selectedIds.length === 1) {
+      updateActiveTab({ pendingOp: { type: op, baseId: activeTab.selectedIds[0] } });
     } else {
        alert("请先选择一个主对象");
     }
   };
 
   const triggerImport = () => {
-    setPendingOp(null);
+    updateActiveTab({ pendingOp: null });
     fileInputRef.current?.click();
   };
 
   const triggerLoadProject = () => {
-      setPendingOp(null);
+      updateActiveTab({ pendingOp: null });
       projectInputRef.current?.click();
   }
 
@@ -854,8 +997,8 @@ const App: React.FC = () => {
         let pos: [number, number, number] = [0, 25, 0];
         let rot: [number, number, number] = [0, 0, 0];
         
-        if (workPlane.step === 'ACTIVE' && workPlane.planeData) {
-            const pd = workPlane.planeData;
+        if (activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.planeData) {
+            const pd = activeTab.workPlane.planeData;
             pos = [pd.position[0], pd.position[1], pd.position[2]];
             const normal = new THREE.Vector3(pd.normal[0], pd.normal[1], pd.normal[2]);
             const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), normal);
@@ -875,18 +1018,22 @@ const App: React.FC = () => {
           geometryData: geometry.toJSON(),
           locked: false
         };
-        const nextObjects = [...objects, newObj];
+        const nextObjects = [...activeTab.objects, newObj];
         const nextSelected = [id];
-        setObjects(nextObjects);
-        setSelectedIds(nextSelected);
+        updateActiveTab({
+          objects: nextObjects,
+          selectedIds: nextSelected
+        });
         pushHistory(nextObjects, nextSelected);
         
-        if (workPlane.step === 'ACTIVE') {
+        if (activeTab.workPlane.step === 'ACTIVE') {
             const localData = {
                 point: [0,0,0] as [number, number, number],
                 normal: [0,1,0] as [number, number, number]
             };
-            setWorkPlane(prev => ({ ...prev, sourceObjId: id, sourceLocalData: localData }));
+            updateActiveTab({
+              workPlane: { ...activeTab.workPlane, sourceObjId: id, sourceLocalData: localData }
+            });
         }
   }
 
@@ -915,23 +1062,35 @@ const App: React.FC = () => {
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
           const text = event.target?.result as string;
           if (!text) return;
           try {
               const data = JSON.parse(text);
-              if (data && Array.isArray(data.objects)) {
-                  setObjects(data.objects);
-                  setSelectedIds([]);
-                  setHistory([{ objects: data.objects, selectedIds: [] }]);
-                  setHistoryIndex(0);
-                  setPendingOp(null);
-                  setWorkPlane({ step: 'IDLE', planeData: null, sourceObjId: null, flipOrientation: false });
-                  setFloorMode(false);
-                  setHasUnsavedChanges(false); // Clean slate
-              } else {
-                  throw new Error("Invalid file format");
-              }
+              
+              // 创建新的标签页来加载项目
+              const newTabId = uuidv4();
+              const newTab: TabState = {
+                id: newTabId,
+                name: file.name.replace('.sl3d', ''),
+                objects: data.objects || [],
+                selectedIds: [],
+                transformMode: 'translate',
+                pendingOp: null,
+                workPlane: {
+                  step: 'IDLE',
+                  planeData: null,
+                  sourceObjId: null,
+                  flipOrientation: false
+                },
+                floorMode: false,
+                hasUnsavedChanges: false,
+                history: [{ objects: data.objects || [], selectedIds: [] }],
+                historyIndex: 0
+              };
+              
+              setTabs([...tabs, newTab]);
+              setActiveTabId(newTabId);
           } catch (err) {
               console.error("Failed to load project", err);
               alert("读取项目文件失败：文件格式不正确");
@@ -947,15 +1106,17 @@ const App: React.FC = () => {
           const projectData = {
               version: "1.0",
               timestamp: new Date().toISOString(),
-              objects: objects
+              objects: activeTab.objects
           };
       const json = JSON.stringify(projectData, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `project_${new Date().toISOString().slice(0,10)}.sl3d`;
+      link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
       link.click();
-      setHasUnsavedChanges(false); // Saved
+      
+      // 标记当前标签页为已保存
+      updateActiveTab({ hasUnsavedChanges: false });
       
       // 如果在Electron环境中，通知主进程项目已保存
       if (window.electronAPI && window.electronAPI.notifyProjectSaved) {
@@ -971,7 +1132,7 @@ const App: React.FC = () => {
   };
 
   const handleLibraryImport = async (url: string, name: string) => {
-      setPendingOp(null);
+      updateActiveTab({ pendingOp: null });
       try {
           const response = await fetch(url);
           if (!response.ok) {
@@ -989,9 +1150,9 @@ const App: React.FC = () => {
   };
 
   const handleExportSTL = () => {
-    const targets = selectedIds.length > 0 
-      ? objects.filter(o => selectedIds.includes(o.id))
-      : objects;
+    const targets = activeTab.selectedIds.length > 0 
+      ? activeTab.objects.filter(o => activeTab.selectedIds.includes(o.id))
+      : activeTab.objects;
     if (targets.length === 0) {
       alert("场景为空，无法导出");
       return;
@@ -1041,8 +1202,8 @@ const App: React.FC = () => {
     };
   }, [error]);
   
-  const selectedObject = selectedIds.length === 1 
-    ? objects.find((obj) => obj.id === selectedIds[0]) || null 
+  const selectedObject = activeTab.selectedIds.length === 1 
+    ? activeTab.objects.find((obj) => obj.id === activeTab.selectedIds[0]) || null 
     : null;
 
   // 模拟初始化加载，实际项目中可以移除或替换为真实加载逻辑
@@ -1086,18 +1247,73 @@ const App: React.FC = () => {
           onExport={handleExportSTL}
           onSaveProject={handleSaveProject}
           onLoadProject={triggerLoadProject}
-          selectionCount={selectedIds.length} 
+          selectionCount={activeTab.selectedIds.length} 
           onUndo={handleUndo}
-          canUndo={historyIndex > 0}
-          transformMode={transformMode}
-          setTransformMode={setTransformMode}
+          canUndo={activeTab.historyIndex > 0}
+          onRedo={handleRedo}
+          canRedo={activeTab.historyIndex < activeTab.history.length - 1}
+          transformMode={activeTab.transformMode}
+          setTransformMode={(mode) => updateActiveTab({ transformMode: mode })}
           onInitWorkPlane={initWorkPlaneMode}
-          workPlaneActive={workPlane.step !== 'IDLE'}
+          workPlaneActive={activeTab.workPlane.step !== 'IDLE'}
           onOpenLibrary={() => setShowLibrary(true)}
-          floorMode={floorMode}
-          onToggleFloorMode={() => setFloorMode(!floorMode)}
+          floorMode={activeTab.floorMode}
+          onToggleFloorMode={() => updateActiveTab({ floorMode: !activeTab.floorMode })}
           onToggleLock={handleToggleLock}
         />
+      </div>
+
+      {/* 标签页头部 - 移至此处 */}
+      <div className="flex bg-gray-200 border-b border-gray-300 overflow-x-auto">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`flex items-center px-4 py-2 cursor-pointer border-r border-gray-300 rounded-lg mr-1 mb-0.5 relative group ${
+              activeTabId === tab.id ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 hover:bg-gray-50'
+            }`}
+            onClick={() => switchTab(tab.id)}
+            onDoubleClick={() => handleRenameTab(tab.id)}
+          >
+            {renamingTabId === tab.id ? (
+              <input
+                type="text"
+                defaultValue={tab.name}
+                autoFocus
+                className="flex-1 bg-transparent outline-none"
+                onBlur={(e) => finishRename(e.target.value, tab.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    finishRename((e.target as HTMLInputElement).value, tab.id);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className="truncate max-w-xs mr-2">{tab.name}</span>
+            )}
+            {tab.hasUnsavedChanges && renamingTabId !== tab.id && (
+              <span className="ml-1 text-orange-500">*</span>
+            )}
+            {tabs.length > 1 && renamingTabId !== tab.id && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(tab.id);
+                }}
+                className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          onClick={createNewTab}
+          className="px-3 py-2 text-gray-600 hover:bg-gray-50 border-r border-gray-300 rounded-t-lg mb-0.5"
+          title="新建标签页"
+        >
+          <i className="fas fa-plus"></i>
+        </button>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -1115,8 +1331,8 @@ const App: React.FC = () => {
               </button>
             </div>
             <ObjectList
-              objects={objects}
-              selectedIds={selectedIds}
+              objects={activeTab.objects}
+              selectedIds={activeTab.selectedIds}
               onSelect={(id, multi) => handleSelect(id, multi)}
             />
           </div>
@@ -1144,17 +1360,17 @@ const App: React.FC = () => {
               </button>
           )}
 
-          {floorMode && (
+          {activeTab.floorMode && (
              <div className="absolute top-4 right-4 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg shadow-sm z-40 flex items-center text-sm font-bold border border-orange-200 pointer-events-none">
                  <i className="fa-solid fa-arrow-down-to-line mr-2"></i> 基准面模式已开启
              </div>
           )}
 
-          {pendingOp && (
+          {activeTab.pendingOp && (
             <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg z-50 animate-pulse flex items-center gap-4 text-base">
-              <span><i className="fa-solid fa-arrow-pointer"></i> 请选择第二个物体（{pendingOp.type === 'UNION' ? '合并' : '切割'}工具）</span>
+              <span><i className="fa-solid fa-arrow-pointer"></i> 请选择第二个物体（{activeTab.pendingOp.type === 'UNION' ? '合并' : '切割'}工具）</span>
               <button 
-                onClick={() => setPendingOp(null)} 
+                onClick={() => updateActiveTab({ pendingOp: null })} 
                 className="hover:text-gray-200 underline text-base ml-4 font-bold"
               >
                 取消
@@ -1162,16 +1378,16 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {workPlane.step !== 'IDLE' && (
+          {activeTab.workPlane.step !== 'IDLE' && (
              <div className="absolute top-6 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-xl shadow-lg z-50 flex items-center gap-4 text-base">
                <div>
                  <i className="fa-solid fa-ruler-combined mr-3"></i>
-                 {workPlane.step === 'PICKING_TARGET' && "步骤1: 点击选择一个平面作为【基准工作平面】"}
-                 {workPlane.step === 'PICKING_SOURCE' && "步骤2: 点击另一个物体的平面作为【对齐面】"}
-                 {workPlane.step === 'ACTIVE' && "工作平面模式: 点击物体对齐，拖拽移动"}
+                 {activeTab.workPlane.step === 'PICKING_TARGET' && "步骤1: 点击选择一个平面作为【基准工作平面】"}
+                 {activeTab.workPlane.step === 'PICKING_SOURCE' && "步骤2: 点击另一个物体的平面作为【对齐面】"}
+                 {activeTab.workPlane.step === 'ACTIVE' && "工作平面模式: 点击物体对齐，拖拽移动"}
                </div>
                
-               {workPlane.step === 'ACTIVE' && workPlane.sourceObjId && selectedIds.includes(workPlane.sourceObjId) && (
+               {activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.sourceObjId && activeTab.selectedIds.includes(activeTab.workPlane.sourceObjId) && (
                  <>
                    <button 
                      onClick={toggleFlip}
@@ -1188,7 +1404,7 @@ const App: React.FC = () => {
                  onClick={cancelWorkPlane}
                  className="hover:text-gray-200 font-bold text-base"
                >
-                 {workPlane.step === 'ACTIVE' ? '退出模式' : '取消'}
+                 {activeTab.workPlane.step === 'ACTIVE' ? '退出模式' : '取消'}
                </button>
              </div>
           )}
@@ -1207,14 +1423,14 @@ const App: React.FC = () => {
           )}
 
           <Scene 
-            objects={objects}
-            selectedIds={selectedIds}
+            objects={activeTab.objects}
+            selectedIds={activeTab.selectedIds}
             onObjectClick={handleSceneClick}
             onUpdate={handleUpdateObject}
             onCommit={handleCommit}
-            transformMode={transformMode}
-            workPlane={workPlane}
-            floorMode={floorMode}
+            transformMode={activeTab.transformMode}
+            workPlane={activeTab.workPlane}
+            floorMode={activeTab.floorMode}
           />
 
           {isLoading ? (
@@ -1242,7 +1458,7 @@ const App: React.FC = () => {
             </div>
             <PropertiesPanel 
               object={selectedObject} 
-              selectionCount={selectedIds.length}
+              selectionCount={activeTab.selectedIds.length}
               onUpdate={(updates) => selectedObject && handleUpdateObject(selectedObject.id, updates)}
               onCommit={handleCommit}
             />

@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 // 导入形状类型定义
 import { ShapeType } from '../types';
@@ -16,6 +14,8 @@ interface ToolbarProps {
   selectionCount: number; // 当前选中对象数量
   onUndo: () => void; // 撤销操作回调
   canUndo: boolean; // 是否可以撤销
+  onRedo: () => void; // 重做操作回调
+  canRedo: boolean; // 是否可以重做
   transformMode: 'translate' | 'rotate' | 'scale'; // 当前变换模式
   setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void; // 设置变换模式回调
   onInitWorkPlane: () => void; // 初始化工作平面回调
@@ -30,7 +30,7 @@ interface ToolbarProps {
 export const Toolbar: React.FC<ToolbarProps> = ({ 
   onAdd, onDelete, onBooleanOp, onImport, onExport, 
   onSaveProject, onLoadProject,
-  selectionCount, onUndo, canUndo,
+  selectionCount, onUndo, canUndo, onRedo, canRedo,
   transformMode, setTransformMode,
   onInitWorkPlane, workPlaneActive,
   onOpenLibrary,
@@ -63,6 +63,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <i className="fa-solid fa-rotate-left text-gray-500"></i> 撤回
         </button>
+        
+        {/* 重做按钮 */}
+        <button 
+          className={`${btnClass} ${!canRedo ? disabledClass : ''}`}
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="恢复到下一步"
+        >
+          <i className="fa-solid fa-rotate-right text-gray-500"></i> 重做
+        </button>
 
         <div className="w-px h-6 bg-gray-300"></div>
         
@@ -93,22 +103,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="w-px h-6 bg-gray-300"></div>
 
-        {/* 锁定和基准面按钮 */}
+        {/* 基准面按钮 */}
         <button 
            className={`${btnClass} ${floorMode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}`}
            onClick={onToggleFloorMode}
            title="基准面模式 (物体底部不低于Y=0)"
         >
            <i className="fa-solid fa-arrow-down-to-line text-orange-500"></i> 基准面
-        </button>
-
-        <button 
-           className={`${btnClass} ${!lockEnabled ? disabledClass : ''}`}
-           onClick={onToggleLock}
-           disabled={!lockEnabled}
-           title="锁定/解锁选中物体"
-        >
-           <i className="fa-solid fa-lock text-gray-500"></i> 锁定
         </button>
 
         <div className="w-px h-6 bg-gray-300"></div>
@@ -200,6 +201,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 title="切割"
             >
                 <i className="fa-solid fa-scissors"></i> 切割
+            </button>
+            
+            <button 
+               className={`${btnClass} ${!lockEnabled ? disabledClass : ''}`}
+               onClick={onToggleLock}
+               disabled={!lockEnabled}
+               title="锁定/解锁选中物体"
+            >
+               <i className="fa-solid fa-lock text-gray-500"></i> 锁定
             </button>
         </div>
 

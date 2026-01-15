@@ -37,6 +37,20 @@ export interface WorkPlaneState {
   };
   flipOrientation: boolean; // 是否翻转方向
 }
+// 定义标签页状态接口
+export interface TabState {
+  id: string; // 标签页唯一标识符
+  name: string; // 标签页名称
+  objects: CADObject[]; // 该标签页中的对象数组
+  selectedIds: string[]; // 该标签页中的选中对象ID
+  transformMode: 'translate' | 'rotate' | 'scale'; // 该标签页中的变换模式
+  pendingOp: { type: 'UNION' | 'SUBTRACT', baseId: string } | null; // 待处理的布尔运算
+  workPlane: WorkPlaneState; // 工作平面状态
+  floorMode: boolean; // 基准面模式
+  hasUnsavedChanges: boolean; // 是否有未保存的更改
+  history: {objects: CADObject[], selectedIds: string[]}[]; // 操作历史
+  historyIndex: number; // 当前历史索引
+}
 
 // 默认颜色常量
 export const DEFAULT_COLOR = "#A78BFA";
