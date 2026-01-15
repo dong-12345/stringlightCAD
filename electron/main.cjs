@@ -269,6 +269,32 @@ ipcMain.handle('show-save-dialog', async () => {
   }
 });
 
+// 显示保存对话框并使用指定名称作为默认文件名的IPC事件
+ipcMain.handle('show-save-dialog-with-name', async (event, name) => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '保存项目',
+      filters: [
+        { name: 'SL3D Files', extensions: ['sl3d'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      defaultPath: `${name}.sl3d`
+    });
+
+    if (result.canceled) {
+      return { canceled: true };
+    }
+
+    return { 
+      filePath: result.filePath,
+      canceled: false 
+    };
+  } catch (error) {
+    console.error('Error showing save dialog with name:', error);
+    throw error;
+  }
+});
+
 // 标志变量，用于判断是否是用户主动关闭应用
 let isQuitting = false;
 

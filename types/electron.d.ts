@@ -11,6 +11,7 @@ declare global {
       saveProject: (data: any) => Promise<any>;
       loadProject: (filePath: string) => Promise<any>;
       showSaveDialog: () => Promise<any>;
+      showSaveDialogWithName: (defaultName: string) => Promise<any>;
       saveFile: (filePath: string, data: string) => Promise<void>;
       
       // 获取和保存开始日期的API

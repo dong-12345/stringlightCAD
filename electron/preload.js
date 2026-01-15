@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProject: (data) => ipcRenderer.invoke('save-project', data),
   loadProject: (filePath) => ipcRenderer.invoke('load-project', filePath),
   showSaveDialog: () => ipcRenderer.invoke('show-save-dialog'),
+  showSaveDialogWithName: (name) => ipcRenderer.invoke('show-save-dialog-with-name', name),
   saveFile: (filePath, data) => ipcRenderer.invoke('save-file', filePath, data),
   
   // 获取和保存开始日期的API

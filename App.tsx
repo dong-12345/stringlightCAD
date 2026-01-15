@@ -147,8 +147,8 @@ const App: React.FC = () => {
       
       // 如果在Electron环境中，使用Electron API保存文件
       if (window.electronAPI) {
-        // 先显示保存对话框让用户选择保存路径
-        window.electronAPI.showSaveDialog()
+        // 先显示保存对话框让用户选择保存路径，使用当前标签页名称作为默认文件名
+        window.electronAPI.showSaveDialogWithName(activeTab.name)
           .then(result => {
             if (!result.canceled) {
               // 用户选择了保存路径，执行保存
@@ -185,7 +185,7 @@ const App: React.FC = () => {
         const blob = new Blob([json], { type: 'application/json' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+        link.download = `${activeTab.name}.sl3d`; // 使用标签页名称作为下载文件名，不添加日期
         link.click();
         updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
         
@@ -1135,8 +1135,8 @@ const App: React.FC = () => {
           
           // 如果在Electron环境中，使用Electron API保存文件
           if (window.electronAPI) {
-            // 先显示保存对话框让用户选择保存路径
-            window.electronAPI.showSaveDialog()
+            // 先显示保存对话框让用户选择保存路径，使用当前标签页名称作为默认文件名
+            window.electronAPI.showSaveDialogWithName(activeTab.name)
               .then(result => {
                 if (!result.canceled) {
                   // 用户选择了保存路径，执行保存
@@ -1164,7 +1164,7 @@ const App: React.FC = () => {
             const blob = new Blob([json], { type: 'application/json' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+            link.download = `${activeTab.name}.sl3d`; // 使用标签页名称作为下载文件名，不添加日期
             link.click();
             updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
           }
@@ -1280,8 +1280,8 @@ const App: React.FC = () => {
       
       // 如果在Electron环境中，使用Electron API显示保存对话框
       if (window.electronAPI) {
-        // 显示保存对话框，让用户选择保存路径
-        const result = await window.electronAPI.showSaveDialog();
+        // 显示保存对话框，使用当前标签页名称作为默认值
+        const result = await window.electronAPI.showSaveDialogWithName(activeTab.name);
         
         // 如果用户取消了操作，不执行保存
         if (result.canceled) {
@@ -1301,7 +1301,7 @@ const App: React.FC = () => {
         const blob = new Blob([json], { type: 'application/json' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`;
+        link.download = `${activeTab.name}.sl3d`; // 使用标签页名称作为下载文件名，不添加日期
         link.click();
         updateActiveTab({ hasUnsavedChanges: false });
         setIsSavingBeforeQuit(false);
