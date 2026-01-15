@@ -184,6 +184,59 @@ ipcMain.handle('get-model-content', async (event, filePath) => {
   }
 });
 
+// 处理保存文件的IPC事件
+ipcMain.handle('save-file', async (event, filePath, data) => {
+  try {
+    // 确保文件路径安全，防止路径遍历攻击
+    const resolvedPath = path.resolve(filePath);
+    const userDir = app.getPath('documents');
+    const baseResolvedPath = path.resolve(userDir);
+    
+    // 确保保存路径在用户的文档目录内
+    if (!resolvedPath.startsWith(baseResolvedPath) && !resolvedPath.includes('.sl3d')) {
+      // 对于项目文件，只允许特定的扩展名和基本路径
+      const fileName = path.basename(resolvedPath);
+      if (!fileName.endsWith('.sl3d')) {
+        throw new Error('Invalid file extension');
+      }
+    }
+    
+    // 写入文件内容
+    await fs.writeFile(resolvedPath, data);
+    console.log(`File saved successfully: ${resolvedPath}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving file:', error);
+    throw error;
+  }
+});
+
+// 显示保存对话框的IPC事件
+ipcMain.handle('show-save-dialog', async () => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '保存项目',
+      filters: [
+        { name: 'SL3D Files', extensions: ['sl3d'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      defaultPath: `项目_${new Date().toISOString().slice(0, 10)}.sl3d`
+    });
+
+    if (result.canceled) {
+      return { canceled: true };
+    }
+
+    return { 
+      filePath: result.filePath,
+      canceled: false 
+    };
+  } catch (error) {
+    console.error('Error showing save dialog:', error);
+    throw error;
+  }
+});
+
 // 标志变量，用于判断是否是用户主动关闭应用
 let isQuitting = false;
 

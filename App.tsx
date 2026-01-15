@@ -81,21 +81,56 @@ const App: React.FC = () => {
 
   // 关闭标签页
   const closeTab = (tabId: string) => {
-    if (tabs.length <= 1) {
-      alert("至少要保留一个标签页！");
-      return;
-    }
-    
     const tabToClose = tabs.find(tab => tab.id === tabId);
     if (tabToClose && tabToClose.hasUnsavedChanges) {
-      // 如果标签页有未保存的更改，这里不再提示用户确认
+      // 如果标签页有未保存的更改，设置状态以显示确认对话框
+      setTabToClose(tabId);
+      setShowTabCloseConfirmDialog(true);
+    } else {
+      // 没有未保存的更改，直接关闭
+      performTabClose(tabId);
     }
-    
+  };
+
+  // 实际执行关闭标签页的函数
+  const performTabClose = (tabId: string) => {
     const newTabs = tabs.filter(tab => tab.id !== tabId);
-    setTabs(newTabs);
     
-    if (activeTabId === tabId) {
-      setActiveTabId(newTabs[0].id);
+    // 如果没有剩余标签页，创建一个新标签页
+    if (newTabs.length === 0) {
+      // 直接创建一个新标签页并设置，而不是先清空再创建
+      const newTabId = uuidv4();
+      const newTab: TabState = {
+        id: newTabId,
+        name: `未命名项目 1`,
+        objects: [],
+        selectedIds: [],
+        transformMode: 'translate',
+        pendingOp: null,
+        workPlane: {
+          step: 'IDLE',
+          planeData: null,
+          sourceObjId: null,
+          flipOrientation: false
+        },
+        floorMode: false,
+        hasUnsavedChanges: false,
+        history: [{ objects: [], selectedIds: [] }],
+        historyIndex: 0
+      };
+      
+      setTabs([newTab]); // 直接设置包含新标签页的数组
+      setActiveTabId(newTabId); // 并切换到新标签页
+    } else {
+      setTabs(newTabs);
+      
+      // 如果关闭的是当前激活的标签页，则切换到第一个可用的标签页
+      if (activeTabId === tabId) {
+        const nextActiveTab = newTabs.length > 0 ? newTabs[0].id : null;
+        if (nextActiveTab) {
+          setActiveTabId(nextActiveTab);
+        }
+      }
     }
   };
 
@@ -1027,9 +1062,25 @@ const App: React.FC = () => {
           
           // 如果在Electron环境中，使用Electron API保存文件
           if (window.electronAPI) {
-            window.electronAPI.saveFile(`${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`, json)
-              .then(() => {
-                updateActiveTab({ hasUnsavedChanges: false }); // 保存后更新状态
+            // 先显示保存对话框让用户选择保存路径
+            window.electronAPI.showSaveDialog()
+              .then(result => {
+                if (!result.canceled) {
+                  // 用户选择了保存路径，执行保存
+                  return window.electronAPI.saveFile(result.filePath, json)
+                    .then(saveResult => {
+                      // 成功保存后，更新标签页名称和状态
+                      // 提取文件名（不含扩展名）
+                      const fileName = result.filePath.split('\\').pop().split('/').pop().replace(/\.sl3d$/, '');
+                      updateActiveTab({ 
+                        name: fileName,
+                        hasUnsavedChanges: false 
+                      });
+                    });
+                } else {
+                  // 用户取消了保存操作
+                  console.log("Save operation cancelled by user");
+                }
               })
               .catch((err) => {
                   setError("保存项目时发生错误");
@@ -1107,6 +1158,8 @@ const App: React.FC = () => {
   
   // 添加未保存更改状态和确认对话框状态
   const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false);
+  const [showTabCloseConfirmDialog, setShowTabCloseConfirmDialog] = useState(false);
+  const [tabToClose, setTabToClose] = useState<string | null>(null);
   const [isSavingBeforeQuit, setIsSavingBeforeQuit] = useState(false);
   
   // 添加对Electron关闭检查事件的监听
@@ -1143,7 +1196,7 @@ const App: React.FC = () => {
   }, [tabs]);
   
   // 处理保存项目并退出
-  const handleSaveProjectForQuit = () => {
+  const handleSaveProjectForQuit = async () => {
     try {
       const projectData = {
         version: "1.0",
@@ -1152,20 +1205,24 @@ const App: React.FC = () => {
       };
       const json = JSON.stringify(projectData, null, 2);
       
-      // 如果在Electron环境中，使用Electron API保存文件
+      // 如果在Electron环境中，使用Electron API显示保存对话框
       if (window.electronAPI) {
-        window.electronAPI.saveFile(`${activeTab.name}_${new Date().toISOString().slice(0,10)}.sl3d`, json)
-          .then((filePath) => {
-            // 保存成功后，更新当前标签页的未保存状态，并通知主进程项目已保存
-            updateActiveTab({ hasUnsavedChanges: false });
-            window.electronAPI?.sendProjectSaved();
-            setIsSavingBeforeQuit(false);
-          })
-          .catch((err) => {
-            console.error("Save project error", err);
-            setError("保存项目失败");
-            setIsSavingBeforeQuit(false);
-          });
+        // 显示保存对话框，让用户选择保存路径
+        const result = await window.electronAPI.showSaveDialog();
+        
+        // 如果用户取消了操作，不执行保存
+        if (result.canceled) {
+          setIsSavingBeforeQuit(false);
+          return;
+        }
+        
+        // 保存到用户选择的路径
+        await window.electronAPI.saveFile(result.filePath, json);
+        
+        // 保存成功后，更新当前标签页的未保存状态，并通知主进程项目已保存
+        updateActiveTab({ hasUnsavedChanges: false });
+        window.electronAPI?.sendProjectSaved();
+        setIsSavingBeforeQuit(false);
       } else {
         // 浏览器环境的备用方案
         const blob = new Blob([json], { type: 'application/json' });
@@ -1261,18 +1318,73 @@ const App: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    setShowCloseConfirmDialog(false);
-                    handleSaveProjectForQuit();
+                    // 直接退出，不保存更改
+                    if (window.electronAPI) {
+                      window.electronAPI.sendProjectSaved(); // 通知主进程继续退出流程
+                    } else {
+                      window.close(); // 浏览器环境直接关闭
+                    }
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-opacity-50 shadow-lg w-full"
-                >
-                  <i className="fas fa-save mr-2"></i>保存并退出
-                </button>
-                <button
-                  onClick={() => window.close()}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 focus:ring-opacity-50 shadow-lg w-full"
                 >
                   <i className="fas fa-sign-out-alt mr-2"></i>直接退出
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab Close Confirm Dialog */}
+      {showTabCloseConfirmDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-300 rounded-2xl shadow-2xl transform transition-all duration-200 scale-100 w-full max-w-md p-8 relative">
+            <div className="text-center">
+              <div className="mx-auto bg-gradient-to-br from-yellow-100 to-yellow-200 w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                <i className="fas fa-exclamation-triangle text-yellow-500 text-2xl"></i>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-3">确认关闭标签页</h2>
+              <p className="text-gray-600 mb-2 leading-relaxed">此标签页有未保存的更改，确定要关闭吗？</p>
+              <p className="text-gray-500 text-sm mb-6">如果关闭，您的更改将会丢失。</p>
+              
+              <div className="flex flex-col gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowTabCloseConfirmDialog(false);
+                    setTabToClose(null);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gray-500 to-gray-600 text-white font-medium hover:from-gray-600 hover:to-gray-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-times mr-2"></i>取消
+                </button>
+                <button
+                  onClick={() => {
+                    // 保存当前标签页的更改
+                    setShowTabCloseConfirmDialog(false);
+                    // 这里可以调用保存功能
+                    handleSaveProject();
+                    // 然后关闭标签页
+                    if (tabToClose) {
+                      performTabClose(tabToClose);
+                    }
+                    setTabToClose(null);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-save mr-2"></i>保存并关闭
+                </button>
+                <button
+                  onClick={() => {
+                    // 不保存直接关闭标签页
+                    setShowTabCloseConfirmDialog(false);
+                    if (tabToClose) {
+                      performTabClose(tabToClose);
+                    }
+                    setTabToClose(null);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-medium hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 focus:ring-opacity-50 shadow-lg w-full"
+                >
+                  <i className="fas fa-times-circle mr-2"></i>不保存，直接关闭
                 </button>
               </div>
             </div>
@@ -1339,7 +1451,7 @@ const App: React.FC = () => {
             {tab.hasUnsavedChanges && renamingTabId !== tab.id && (
               <span className="ml-1 text-orange-500">*</span>
             )}
-            {tabs.length > 1 && renamingTabId !== tab.id && (
+            {renamingTabId !== tab.id && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
