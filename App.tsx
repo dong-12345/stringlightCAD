@@ -1016,7 +1016,8 @@ const App: React.FC = () => {
         
         const id = uuidv4();
         let pos: [number, number, number] = [0, 25, 0];
-        let rot: [number, number, number] = [0, 0, 0];
+        // 应用与预览中相同的Y轴旋转90度
+        let rot: [number, number, number] = [-Math.PI / 2, 0, 0];
         
         if (activeTab.workPlane.step === 'ACTIVE' && activeTab.workPlane.planeData) {
             const pd = activeTab.workPlane.planeData;
@@ -1024,7 +1025,8 @@ const App: React.FC = () => {
             const normal = new THREE.Vector3(pd.normal[0], pd.normal[1], pd.normal[2]);
             const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), normal);
             const e = new THREE.Euler().setFromQuaternion(q);
-            rot = [e.x, e.y, e.z];
+            // 如果在工作平面上放置，保留工作平面的旋转但加上Y轴90度旋转
+            rot = [e.x-Math.PI / 2, e.y, e.z];
         }
 
         const newObj: CADObject = {

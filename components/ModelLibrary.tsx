@@ -45,7 +45,7 @@ const ModelPreview: React.FC<{ url: string }> = ({ url }) => {
   // 渲染模型预览网格
   return (
     <Center>
-      <mesh geometry={geom}>
+      <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]}>
         <meshStandardMaterial color="#6366f1" roughness={0.5} />
       </mesh>
     </Center>
