@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const fsNative = require('fs'); // 添加同步fs模块用于创建目录
 
 // 设置过期日期 - 修改这个日期来控制应用的有效期
-const EXPIRATION_DATE = new Date('2025-3-15'); // 修改这个日期以设定到期时间
+const EXPIRATION_DATE = new Date('2026-3-15'); // 修改这个日期以设定到期时间
 
 let mainWindow;
 

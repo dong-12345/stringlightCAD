@@ -214,6 +214,16 @@ const App: React.FC = () => {
         ensureAttributes(resultGeometry);
       }
 
+      // 计算布尔运算结果的几何中心
+      const tempMesh = new THREE.Mesh(resultGeometry);
+      const boundingBox = new THREE.Box3().setFromObject(tempMesh);
+      const center = new THREE.Vector3();
+      boundingBox.getCenter(center);
+
+      // 将几何体的中心移到原点（即相对于其父对象移动到中心的相反位置）
+      resultGeometry = resultGeometry.clone();
+      resultGeometry.translate(-center.x, -center.y, -center.z);
+
       const json = resultGeometry.toJSON();
       const id = uuidv4();
 
@@ -221,7 +231,7 @@ const App: React.FC = () => {
         id,
         name: `${obj1.name} ${op === 'UNION' ? '∪' : '-'} ${obj2.name}`,
         type: 'custom',
-        position: [0, 0, 0], 
+        position: [center.x, center.y, center.z], // 使用几何中心作为新对象的位置
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
         color: obj1.color,
