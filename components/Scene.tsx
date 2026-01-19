@@ -205,8 +205,8 @@ const MeshComponent: React.FC<{
       <meshStandardMaterial
         color={obj.color}
         emissive={isSelected ? "#3b82f6" : "#000000"}
-        roughness={0.4} 
-        metalness={0.3} // 稍微增加金属感以获得更好的环境反射效果
+        roughness={0.85} 
+        metalness={0.1} // 稍微增加金属感以获得更好的环境反射效果
         polygonOffset={true}
         polygonOffsetFactor={1}
         polygonOffsetUnits={1}
@@ -386,7 +386,7 @@ const SceneContent: React.FC<SceneProps> = ({ objects, selectedIds, onObjectClic
   return (
     <>
       {/* 高质量光照设置 - 使用简单的环境光和方向光替代HDR贴图 */}
-      <ambientLight intensity={0.5} /> 
+      <ambientLight intensity={0.9} /> 
       <directionalLight 
         position={[80, 100, 80]} 
         intensity={1.2} 
