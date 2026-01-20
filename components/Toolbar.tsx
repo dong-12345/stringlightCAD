@@ -24,6 +24,7 @@ interface ToolbarProps {
   floorMode: boolean; // 基准面模式状态
   onToggleFloorMode: () => void; // 切换基准面模式回调
   onToggleLock: () => void; // 切换锁定状态回调
+  isBooleanOperationRunning?: boolean; // 布尔运算是否正在运行
 }
 
 // Toolbar组件：应用程序的顶部工具栏
@@ -35,7 +36,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onInitWorkPlane, workPlaneActive,
   onOpenLibrary,
   floorMode, onToggleFloorMode,
-  onToggleLock
+  onToggleLock,
+  isBooleanOperationRunning = false
 }) => {
   // 通用按钮样式 - 缩小尺寸（约0.8倍）
   const btnClass = "px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors flex items-center gap-2 text-base border border-transparent whitespace-nowrap font-medium text-gray-700";
@@ -43,11 +45,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const disabledClass = "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-gray-400 grayscale";
 
   // 布尔运算是否可用（至少选中一个对象）
-  const booleanEnabled = selectionCount >= 1;
+  const booleanEnabled = selectionCount >= 1 && !isBooleanOperationRunning;
   // 删除是否可用（至少选中一个对象）
-  const deleteEnabled = selectionCount > 0;
+  const deleteEnabled = selectionCount > 0 && !isBooleanOperationRunning;
   // 锁定是否可用（至少选中一个对象）
-  const lockEnabled = selectionCount > 0;
+  const lockEnabled = selectionCount > 0 && !isBooleanOperationRunning;
 
   return (
     <div className="flex flex-col gap-2 w-full justify-center">
@@ -56,9 +58,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="flex items-center gap-3 border-b border-gray-100 pb-2">
          {/* 撤销按钮 */}
          <button 
-          className={`${btnClass} ${!canUndo ? disabledClass : ''}`}
+          className={`${btnClass} ${!canUndo || isBooleanOperationRunning ? disabledClass : ''}`}
           onClick={onUndo}
-          disabled={!canUndo}
+          disabled={!canUndo || isBooleanOperationRunning}
           title="撤回到上一步"
         >
           <i className="fa-solid fa-rotate-left text-gray-500"></i> 撤回
@@ -66,9 +68,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         
         {/* 重做按钮 */}
         <button 
-          className={`${btnClass} ${!canRedo ? disabledClass : ''}`}
+          className={`${btnClass} ${!canRedo || isBooleanOperationRunning ? disabledClass : ''}`}
           onClick={onRedo}
-          disabled={!canRedo}
+          disabled={!canRedo || isBooleanOperationRunning}
           title="恢复到下一步"
         >
           <i className="fa-solid fa-rotate-right text-gray-500"></i> 重做
@@ -79,22 +81,25 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* 变换工具组 */}
         <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-200">
           <button 
-            className={`${iconBtnClass} ${transformMode === 'translate' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'}`} 
+            className={`${iconBtnClass} ${transformMode === 'translate' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'} ${(isBooleanOperationRunning) ? disabledClass : ''}`} 
             onClick={() => setTransformMode('translate')} 
+            disabled={isBooleanOperationRunning}
             title="移动 (Translate)"
           >
             <i className="fa-solid fa-arrows-up-down-left-right"></i>
           </button>
           <button 
-            className={`${iconBtnClass} ${transformMode === 'rotate' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'}`} 
+            className={`${iconBtnClass} ${transformMode === 'rotate' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'} ${(isBooleanOperationRunning) ? disabledClass : ''}`} 
             onClick={() => setTransformMode('rotate')} 
+            disabled={isBooleanOperationRunning}
             title="旋转 (Rotate)"
           >
             <i className="fa-solid fa-rotate"></i>
           </button>
           <button 
-            className={`${iconBtnClass} ${transformMode === 'scale' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'}`} 
+            className={`${iconBtnClass} ${transformMode === 'scale' ? 'bg-blue-100 text-blue-600 border-blue-200' : 'text-blue-400'} ${(isBooleanOperationRunning) ? disabledClass : ''}`} 
             onClick={() => setTransformMode('scale')} 
+            disabled={isBooleanOperationRunning}
             title="缩放 (Scale)"
           >
             <i className="fa-solid fa-expand"></i>
@@ -105,8 +110,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* 基准面按钮 */}
         <button 
-           className={`${btnClass} ${floorMode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''}`}
+           className={`${btnClass} ${floorMode ? 'bg-orange-100 text-orange-700 border-orange-200' : ''} ${(isBooleanOperationRunning) ? disabledClass : ''}`}
            onClick={onToggleFloorMode}
+           disabled={isBooleanOperationRunning}
            title="基准面模式 (物体底部不低于Y=0)"
         >
            <i className="fa-solid fa-arrow-down-to-line text-orange-500"></i> 基准面
@@ -116,8 +122,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* 工作平面按钮 */}
         <button 
-          className={`${btnClass} ${workPlaneActive ? 'bg-purple-100 text-purple-700 border-purple-200' : ''}`} 
+          className={`${btnClass} ${workPlaneActive ? 'bg-purple-100 text-purple-700 border-purple-200' : ''} ${(isBooleanOperationRunning) ? disabledClass : ''}`} 
           onClick={onInitWorkPlane}
+          disabled={isBooleanOperationRunning}
           title="设定工作平面与对齐"
         >
           <i className="fa-solid fa-ruler-combined text-purple-600"></i> 工作平面
@@ -127,20 +134,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* 文件操作按钮组 */}
         <div className="flex items-center gap-2">
-            <button className={btnClass} onClick={onLoadProject} title="打开 .sl3d 项目文件">
+            <button className={`${btnClass} ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={onLoadProject} disabled={isBooleanOperationRunning} title="打开 .sl3d 项目文件">
                 <i className="fa-regular fa-folder-open text-orange-600"></i> 打开
             </button>
-            <button className={btnClass} onClick={onSaveProject} title="保存当前进度为 .sl3d 文件">
+            <button className={`${btnClass} ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={onSaveProject} disabled={isBooleanOperationRunning} title="保存当前进度为 .sl3d 文件">
                 <i className="fa-regular fa-floppy-disk text-blue-600"></i> 保存
             </button>
             <div className="w-px h-4 bg-gray-300 mx-1"></div>
-            <button className={btnClass} onClick={onOpenLibrary} title="打开模型库">
+            <button className={`${btnClass} ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={onOpenLibrary} disabled={isBooleanOperationRunning} title="打开模型库">
                 <i className="fa-solid fa-cubes text-indigo-500"></i> 库
             </button>
-            <button className={btnClass} onClick={onImport} title="导入本地STL文件">
+            <button className={`${btnClass} ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={onImport} disabled={isBooleanOperationRunning} title="导入本地STL文件">
                 <i className="fa-solid fa-upload text-gray-600"></i> 导入STL
             </button>
-            <button className={btnClass} onClick={onExport} title="导出当前场景或选中项">
+            <button className={`${btnClass} ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={onExport} disabled={isBooleanOperationRunning} title="导出当前场景或选中项">
                 <i className="fa-solid fa-download text-gray-600"></i> 导出STL
             </button>
         </div>
@@ -151,31 +158,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* 基础形状组 */}
         <div className="flex items-center gap-1">
             <span className="text-gray-400 text-xs font-semibold uppercase mr-2 tracking-wider">创建:</span>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('cube')} title="方块">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('cube')} disabled={isBooleanOperationRunning} title="方块">
             <i className="fa-solid fa-square"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('sphere')} title="球体">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('sphere')} disabled={isBooleanOperationRunning} title="球体">
             <i className="fa-solid fa-circle"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('cylinder')} title="圆柱">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('cylinder')} disabled={isBooleanOperationRunning} title="圆柱">
             <i className="fa-solid fa-database"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('cone')} title="圆锥">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('cone')} disabled={isBooleanOperationRunning} title="圆锥">
             <i className="fa-solid fa-play fa-rotate-270" style={{ transform: 'rotate(-90deg)' }}></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('prism')} title="三棱柱">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('prism')} disabled={isBooleanOperationRunning} title="三棱柱">
             <i className="fa-solid fa-caret-up"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('hemisphere')} title="半球体">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('hemisphere')} disabled={isBooleanOperationRunning} title="半球体">
             <i className="fa-solid fa-circle-half-stroke" style={{ transform: 'rotate(-90deg)' }}></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('half_cylinder')} title="半圆柱">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('half_cylinder')} disabled={isBooleanOperationRunning} title="半圆柱">
             <i className="fa-solid fa-warehouse"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('torus')} title="圆环">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('torus')} disabled={isBooleanOperationRunning} title="圆环">
             <i className="fa-solid fa-circle-dot"></i>
             </button>
-            <button className={`${iconBtnClass} text-blue-500`} onClick={() => onAdd('text')} title="3D文本">
+            <button className={`${iconBtnClass} text-blue-500 ${(isBooleanOperationRunning) ? disabledClass : ''}`} onClick={() => onAdd('text')} disabled={isBooleanOperationRunning} title="3D文本">
             <i className="fa-solid fa-font"></i>
             </button>
         </div>
@@ -185,6 +192,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* 布尔操作 */}
         <div className="flex items-center gap-2">
              <span className="text-gray-400 text-xs font-semibold uppercase mr-2 tracking-wider">编辑:</span>
+             
+             {isBooleanOperationRunning && (
+                <div className="flex items-center px-3 py-2 text-sm text-blue-600 font-medium">
+                  <i className="fa-solid fa-spinner fa-spin mr-2"></i> 布尔运算中...
+                </div>
+             )}
+             
              <button 
                 className={`${btnClass} ${!booleanEnabled ? disabledClass : ''} text-purple-700`}
                 onClick={() => onBooleanOp('UNION')}

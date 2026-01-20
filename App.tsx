@@ -299,99 +299,118 @@ const App: React.FC = () => {
 
   // --- Core Boolean Logic ---
   const executeBooleanOp = (op: 'UNION' | 'SUBTRACT', baseId: string, toolId: string) => {
-    const obj1 = activeTab.objects.find(o => o.id === baseId);
-    const obj2 = activeTab.objects.find(o => o.id === toolId);
+    // 设置布尔操作正在进行的状态
+    setIsBooleanOperationRunning(true);
     
-    if (!obj1 || !obj2) return;
-    if (obj1.locked) {
-        alert(`对象 "${obj1.name}" 已锁定，无法修改。`);
-        return;
-    }
+    // 使用setTimeout将操作移到下一个事件循环，让UI有机会更新
+    setTimeout(() => {
+      try {
+        const obj1 = activeTab.objects.find(o => o.id === baseId);
+        const obj2 = activeTab.objects.find(o => o.id === toolId);
+        
+        if (!obj1 || !obj2) {
+          setIsBooleanOperationRunning(false);
+          return;
+        }
+        if (obj1.locked) {
+            alert(`对象 "${obj1.name}" 已锁定，无法修改。`);
+            setIsBooleanOperationRunning(false);
+            return;
+        }
 
-    // 检测两个对象是否有重叠
-    if (!hasIntersection(obj1, obj2)) {
-      setError("两个对象没有重叠，无法进行布尔运算。");
-      return;
-    }
+        // 检测两个对象是否有重叠
+        if (!hasIntersection(obj1, obj2)) {
+          setError("两个对象没有重叠，无法进行布尔运算。");
+          setIsBooleanOperationRunning(false);
+          return;
+        }
 
-    try {
-      const geom1 = createGeometry(obj1);
-      const geom2 = createGeometry(obj2);
+        try {
+          const geom1 = createGeometry(obj1);
+          const geom2 = createGeometry(obj2);
 
-      const brush1 = new Brush(geom1);
-      brush1.position.set(...obj1.position);
-      brush1.rotation.set(...obj1.rotation);
-      brush1.scale.set(...obj1.scale);
-      brush1.updateMatrixWorld();
+          const brush1 = new Brush(geom1);
+          brush1.position.set(...obj1.position);
+          brush1.rotation.set(...obj1.rotation);
+          brush1.scale.set(...obj1.scale);
+          brush1.updateMatrixWorld();
 
-      const brush2 = new Brush(geom2);
-      brush2.position.set(...obj2.position);
-      brush2.rotation.set(...obj2.rotation);
-      brush2.scale.set(...obj2.scale);
-      brush2.updateMatrixWorld();
+          const brush2 = new Brush(geom2);
+          brush2.position.set(...obj2.position);
+          brush2.rotation.set(...obj2.rotation);
+          brush2.scale.set(...obj2.scale);
+          brush2.updateMatrixWorld();
 
-      const evaluator = new Evaluator();
-      evaluator.attributes = ['position', 'normal']; 
-      evaluator.useGroups = false; 
-      
-      const csgOp = op === 'UNION' ? ADDITION : SUBTRACTION;
-      const result = evaluator.evaluate(brush1, brush2, csgOp);
+          const evaluator = new Evaluator();
+          evaluator.attributes = ['position', 'normal']; 
+          evaluator.useGroups = false; 
+          
+          const csgOp = op === 'UNION' ? ADDITION : SUBTRACTION;
+          const result = evaluator.evaluate(brush1, brush2, csgOp);
 
-      let resultGeometry = result.geometry;
-      resultGeometry = mergeVertices(resultGeometry, 1e-4);
-      resultGeometry.computeVertexNormals();
-      if (!resultGeometry.attributes.uv) {
-        ensureAttributes(resultGeometry);
-      }
+          let resultGeometry = result.geometry;
+          resultGeometry = mergeVertices(resultGeometry, 1e-4);
+          resultGeometry.computeVertexNormals();
+          if (!resultGeometry.attributes.uv) {
+            ensureAttributes(resultGeometry);
+          }
 
-      // 计算布尔运算结果的几何中心
-      const tempMesh = new THREE.Mesh(resultGeometry);
-      const boundingBox = new THREE.Box3().setFromObject(tempMesh);
-      const center = new THREE.Vector3();
-      boundingBox.getCenter(center);
+          // 计算布尔运算结果的几何中心
+          const tempMesh = new THREE.Mesh(resultGeometry);
+          const boundingBox = new THREE.Box3().setFromObject(tempMesh);
+          const center = new THREE.Vector3();
+          boundingBox.getCenter(center);
 
-      // 将几何体的中心移到原点（即相对于其父对象移动到中心的相反位置）
-      resultGeometry = resultGeometry.clone();
-      resultGeometry.translate(-center.x, -center.y, -center.z);
+          // 将几何体的中心移到原点（即相对于其父对象移动到中心的相反位置）
+          resultGeometry = resultGeometry.clone();
+          resultGeometry.translate(-center.x, -center.y, -center.z);
 
-      const json = resultGeometry.toJSON();
-      const id = uuidv4();
+          const json = resultGeometry.toJSON();
+          const id = uuidv4();
 
-      const newObj: CADObject = {
-        id,
-        name: `${obj1.name} ${op === 'UNION' ? '∪' : '-'} ${obj2.name}`,
-        type: 'custom',
-        position: [center.x, center.y, center.z], // 使用几何中心作为新对象的位置
-        rotation: [0, 0, 0],
-        scale: [1, 1, 1],
-        color: obj1.color,
-        params: {},
-        geometryData: json,
-        locked: false
-      };
+          const newObj: CADObject = {
+            id,
+            name: `${obj1.name} ${op === 'UNION' ? '∪' : '-'} ${obj2.name}`,
+            type: 'custom',
+            position: [center.x, center.y, center.z], // 使用几何中心作为新对象的位置
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            color: obj1.color,
+            params: {},
+            geometryData: json,
+            locked: false
+          };
 
-      const nextObjects = [
-        ...activeTab.objects.filter(o => o.id !== obj1.id && o.id !== obj2.id),
-        newObj
-      ];
-      const nextSelected = [id];
+          const nextObjects = [
+            ...activeTab.objects.filter(o => o.id !== obj1.id && o.id !== obj2.id),
+            newObj
+          ];
+          const nextSelected = [id];
 
-      updateActiveTab({
-        objects: nextObjects,
-        selectedIds: nextSelected
-      });
-      pushHistory(nextObjects, nextSelected);
-      
-      if (activeTab.workPlane.step === 'ACTIVE') {
           updateActiveTab({
-            workPlane: { ...activeTab.workPlane, sourceObjId: id }
+            objects: nextObjects,
+            selectedIds: nextSelected
           });
-      }
+          pushHistory(nextObjects, nextSelected);
+          
+          if (activeTab.workPlane.step === 'ACTIVE') {
+              updateActiveTab({
+                workPlane: { ...activeTab.workPlane, sourceObjId: id }
+              });
+          }
 
-    } catch (e) {
-      console.error("Boolean operation failed", e);
-      alert("布尔运算失败，请检查对象形状。");
-    }
+        } catch (e) {
+          console.error("Boolean operation failed", e);
+          alert("布尔运算失败，请检查对象形状。");
+        } finally {
+          // 操作完成后重置状态
+          setIsBooleanOperationRunning(false);
+        }
+      } catch (err) {
+        console.error("Error during boolean operation:", err);
+        setIsBooleanOperationRunning(false);
+      }
+    }, 0);
   };
 
   // 检测两个对象是否相交的函数
@@ -988,6 +1007,8 @@ const App: React.FC = () => {
   };
 
   const handleBooleanOperation = (op: 'UNION' | 'SUBTRACT') => {
+    if (isBooleanOperationRunning) return; // 防止重复点击
+    
     if (activeTab.selectedIds.length === 2) {
       executeBooleanOp(op, activeTab.selectedIds[0], activeTab.selectedIds[1]);
       return;
@@ -1228,7 +1249,8 @@ const App: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+  const [isBooleanOperationRunning, setIsBooleanOperationRunning] = useState<boolean>(false);
+
   // 添加未保存更改状态和确认对话框状态
   const [showCloseConfirmDialog, setShowCloseConfirmDialog] = useState(false);
   const [showTabCloseConfirmDialog, setShowTabCloseConfirmDialog] = useState(false);
@@ -1485,6 +1507,7 @@ const App: React.FC = () => {
           floorMode={activeTab.floorMode}
           onToggleFloorMode={() => updateActiveTab({ floorMode: !activeTab.floorMode })}
           onToggleLock={handleToggleLock}
+          isBooleanOperationRunning={isBooleanOperationRunning}
         />
       </div>
 
